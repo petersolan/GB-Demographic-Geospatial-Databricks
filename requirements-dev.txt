@@ -7,3 +7,6 @@ pandas>=2.2,<3.0      # PySpark 4.2 warns it does not yet fully support pandas 3
 pyarrow>=16
 pytest>=8
 ruff>=0.6
+# Local data preparation (scripts/prepare_boundaries.py)
+geopandas>=1.0
+pyogrio>=0.10
