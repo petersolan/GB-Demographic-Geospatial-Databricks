@@ -1,0 +1,4 @@
+# Keep Unix line endings everywhere: files run inside Linux containers and on Databricks
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
