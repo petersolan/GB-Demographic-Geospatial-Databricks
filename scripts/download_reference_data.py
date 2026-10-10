@@ -10,6 +10,8 @@ Usage: python scripts/download_reference_data.py [dataset ...]
 import datetime as dt
 import hashlib
 import json
+import os
+import shutil
 import sys
 import time
 import urllib.request
@@ -22,6 +24,13 @@ UA = {"User-Agent": "GB-Demographic-Geospatial-Databricks (portfolio project)"}
 ARCGIS_ITEM = "https://www.arcgis.com/sharing/rest/content/items/{id}/data"
 HUB_EXPORT = "https://hub.arcgis.com/api/download/v1/items/{id}/{fmt}?redirect=false&layers=0"
 ODS_EPRACCUR = "https://www.odsdatasearchandexport.nhs.uk/api/getReport?report=epraccur"
+# Census 2021 usual residents per postcode (England & Wales), produced by the companion project
+# GB-Census-Population-Map (scripts/02_postcode_population.py). Override with CENSUS_POSTCODE_POPULATION.
+CENSUS_POSTCODE_POPULATION = os.environ.get(
+    "CENSUS_POSTCODE_POPULATION",
+    str(ROOT.parent / "Census-distribution" / "data" / "processed"
+        / "postcode_population_england_wales.parquet"),
+)
 
 # dataset, version, how to fetch, source id/url, file name, description
 SOURCES = [
@@ -42,6 +51,9 @@ SOURCES = [
      "Integrated Care Boards (April 2023) Names and Codes in EN: GSS code, ODS code, name"),
     ("icb_codes", "2026-04", "hub_csv", "ff00c7228a5e4f1fa1fdf6bd81e15a1f", "icb_codes_2026_04.csv",
      "Integrated Care Boards (April 2026) Names and Codes in EN: GSS code, ODS code, name"),
+    ("census_postcode_population", "2021", "local", CENSUS_POSTCODE_POPULATION,
+     "postcode_population_2021.parquet",
+     "Census 2021 usual residents per postcode, England & Wales (from GB-Census-Population-Map)"),
     # ODS publishes only the current list: our dated snapshots ARE the version history
     ("ods_epraccur", dt.date.today().isoformat(), "url", ODS_EPRACCUR, "epraccur.csv",
      "ODS GP practices (epraccur), current snapshot on download date; no header row"),
@@ -94,10 +106,17 @@ def main(only: list[str]) -> None:
         url = (ARCGIS_ITEM.format(id=src) if kind == "arcgis_item"
                else hub_export_url(src, "geoPackage") if kind == "hub_gpkg"
                else hub_export_url(src, "csv") if kind == "hub_csv" else src)
-        fetch(url, dest)
+        if kind == "local" and not Path(src).exists():
+            raise FileNotFoundError(f"{dataset}: {src} not found (set CENSUS_POSTCODE_POPULATION)")
+        if kind == "local":
+            shutil.copyfile(src, dest)
+        else:
+            fetch(url, dest)
         manifest[key] = {
             "dataset": dataset, "version": version, "description": desc,
-            "source": src if kind == "url" else f"arcgis item {src}",
+            "source": (src if kind == "url"
+                       else f"GB-Census-Population-Map output {Path(src).name}" if kind == "local"
+                       else f"arcgis item {src}"),
             "bytes": dest.stat().st_size, "sha256": sha256(dest),
             "retrieved_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         }

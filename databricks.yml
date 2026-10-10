@@ -14,6 +14,9 @@ variables:
   spatial_scope:
     description: ICB GSS code limiting the spatial join (Devon by default), or "all"
     default: E54000037
+  synthetic_lads:
+    description: LADs to generate synthetic patients for (999 test range fits ~909k people)
+    default: E07000040,E07000041,E07000042,E07000045   # East Devon, Exeter, Mid Devon, Teignbridge
 
 # Build the gbdemo package as a wheel on deploy; job tasks install it from the upload.
 artifacts:

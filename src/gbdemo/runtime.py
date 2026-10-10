@@ -14,6 +14,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--run-id", default="local")
     # silver_spatial: an ICB GSS code (e.g. E54000037 = Devon) or "all" for England and Wales
     p.add_argument("--spatial-scope", default="all")
+    # synthetic_registrations: comma-separated LAD codes to generate patients for
+    p.add_argument("--synthetic-lads", default="E07000041")
     a, _ = p.parse_known_args(argv)
     return a
 

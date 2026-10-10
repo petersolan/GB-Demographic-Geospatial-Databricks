@@ -63,6 +63,9 @@ def main() -> None:
         elif ds == "ods_epraccur":
             df = bronze.read_headerless_csv(spark, str(path), EPRACCUR_FIELDS)
             load(df, ds, ver, "ods_epraccur", meta["sha256"])
+        elif ds == "census_postcode_population":
+            df = spark.read.parquet(str(path)).select("*", "_metadata.file_path")
+            load(df, ds, ver, "census_postcode_population", meta["sha256"])
         elif ds == "icb_codes":
             load(bronze.read_headed_csv(spark, str(path)), ds, ver, "icb_codes", meta["sha256"])
         elif ds in BOUNDARY_TABLES:

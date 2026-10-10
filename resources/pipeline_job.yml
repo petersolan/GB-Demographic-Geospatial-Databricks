@@ -26,6 +26,8 @@ resources:
               - "{{job.run_id}}"
               - --spatial-scope
               - ${var.spatial_scope}
+              - --synthetic-lads
+              - ${var.synthetic_lads}
 
         - task_key: silver_postcodes
           max_retries: 0
@@ -43,9 +45,26 @@ resources:
             python_file: ../pipelines/silver_spatial.py
             parameters: *layout_args
 
+        - task_key: synthetic_registrations
+          max_retries: 0
+          depends_on: [{ task_key: silver_postcodes }]
+          environment_key: default
+          spark_python_task:
+            python_file: ../pipelines/synthetic_registrations.py
+            parameters: *layout_args
+
+        - task_key: silver_registrations
+          max_retries: 0
+          depends_on: [{ task_key: synthetic_registrations }]
+          environment_key: default
+          spark_python_task:
+            python_file: ../pipelines/silver_registrations.py
+            parameters: *layout_args
+
+        # gold waits for both branches: spatial and registrations run in parallel
         - task_key: gold_aggregate
           max_retries: 0
-          depends_on: [{ task_key: silver_spatial }]
+          depends_on: [{ task_key: silver_spatial }, { task_key: silver_registrations }]
           environment_key: default
           spark_python_task:
             python_file: ../pipelines/gold_aggregate.py
