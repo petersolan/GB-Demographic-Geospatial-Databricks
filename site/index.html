@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Registered vs Resident</title>
+<link rel="icon" href="data:,">
+<meta name="description" content="Synthetic GP registrations vs Census 2021 residents for Exeter and neighbouring districts, from a Databricks pipeline with disclosure control.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<style>
+/* Layout: full-height map with a reading panel on the left (stacks on phones). */
+:root {
+  --bg: #f6f7f8; --surface: #ffffff; --ink: #14181d; --ink-2: #4a525c; --muted: #7b838c;
+  --line: #e1e5e9; --accent: #1c5cab;
+  --r0: #e8f0fb; --r1: #b7d3f6; --r2: #6da7ec; --r3: #2a78d6; --r4: #184f95; --low: #f0c8a0;
+  --hatch: #9aa3ad;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1215; --surface: #171b20; --ink: #eef1f4; --ink-2: #b6bec7; --muted: #7d868f;
+          --line: #2a3038; --accent: #86b6ef; --hatch: #6b737c; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); display: grid;
+       grid-template-columns: 400px minmax(0, 1fr); }
+@media (max-width: 860px) { body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70vh; } }
+aside { overflow-y: auto; padding: 20px; background: var(--surface); border-right: 1px solid var(--line);
+        display: grid; gap: 18px; align-content: start; }
+#map { min-height: 420px; }
+h1 { font-size: 22px; line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin: 0 0 8px; }
+p { margin: 0; color: var(--ink-2); }
+.tag { display: inline-block; font: 600 11px/1 var(--font); letter-spacing: .05em; text-transform: uppercase;
+       color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 3px 6px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.stat span { font-size: 12px; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+td, th { padding: 5px 4px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+td:first-child, th:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.legend { display: grid; gap: 4px; font-size: 12px; }
+.legend div { display: flex; align-items: center; gap: 8px; }
+.sw { width: 18px; height: 12px; border-radius: 2px; flex: none; }
+.hatch { background: repeating-linear-gradient(45deg, var(--hatch) 0 2px, transparent 2px 6px); border: 1px solid var(--hatch); }
+.note { font-size: 12px; color: var(--muted); }
+code { font-family: var(--mono); font-size: 12px; }
+.maplibregl-popup-content { background: var(--surface); color: var(--ink); font: 13px/1.4 var(--font); }
+</style>
+</head>
+<body>
+<aside>
+  <div>
+    <span class="tag">Synthetic patient data</span>
+    <h1>Registered vs resident: Exeter and neighbouring districts</h1>
+  </div>
+  <p>GP registrations (synthetic) compared with Census 2021 residents in each LSOA. A ratio above 1
+     means more people are registered than live there: the "list inflation" NHS planners correct for.
+     Built by a Databricks pipeline; every number shown is disclosure-controlled.</p>
+
+  <section id="headline"></section>
+
+  <section>
+    <h2>Registered per resident</h2>
+    <div class="legend" id="legend"></div>
+    <p class="note" style="margin-top:6px">Circles: GP practices, sized by list size.</p>
+  </section>
+
+  <section>
+    <h2>By integrated care board</h2>
+    <table id="icb"><thead><tr><th>ICB</th><th>Residents</th><th>Registered</th><th>Ratio</th></tr></thead><tbody></tbody></table>
+    <p class="note" style="margin-top:6px">Rows outside Devon are registrations placed there by postcode typos
+      that are real postcodes elsewhere; their counts are 1-9 and therefore suppressed.</p>
+  </section>
+
+  <section>
+    <h2>What the pipeline caught</h2>
+    <table id="dq"><tbody></tbody></table>
+  </section>
+
+  <section class="note" id="method"></section>
+</aside>
+<div id="map" role="region" aria-label="Map of registered per resident by LSOA"></div>
+
+<script>
+(async () => {
+  const [lsoa, practices, summary] = await Promise.all(
+    ["data/lsoa.geojson", "data/practices.geojson", "data/summary.json"].map(u => fetch(u).then(r => r.json())));
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const fmt = n => n == null ? "<i>suppressed</i>" : Number(n).toLocaleString("en-GB");
+  const M = summary.pipeline_metrics;
+  const m = (step, metric) => { const v = Object.values(M[step] || {})[0] || {}; return v[metric]; };
+
+  // headline numbers
+  const devon = summary.icb_summary.find(r => r.icb_gss === "E54000037") || {};
+  document.getElementById("headline").innerHTML = `<div class="stats">
+    <div class="stat"><b>${fmt(devon.residents)}</b><span>residents (Census 2021)</span></div>
+    <div class="stat"><b>${fmt(devon.registered)}</b><span>registered (synthetic)</span></div>
+    <div class="stat"><b>${devon.registered_per_resident ?? "–"}</b><span>registered per resident</span></div></div>`;
+
+  // legend: one-hue sequential ramp + hatched suppressed + below-1 note
+  const breaks = [[1.00, "--r0", "under 1.03"], [1.03, "--r1", "1.03 - 1.04"], [1.04, "--r2", "1.04 - 1.05"],
+                  [1.05, "--r3", "1.05 - 1.07"], [1.07, "--r4", "1.07 and over"]];
+  document.getElementById("legend").innerHTML =
+    breaks.map(([, v, label]) => `<div><span class="sw" style="background:var(${v})"></span>${label}</div>`).join("") +
+    `<div><span class="sw hatch"></span>suppressed (a count of 1-9)</div>`;
+
+  // ICB table (protected values)
+  document.querySelector("#icb tbody").innerHTML = summary.icb_summary
+    .sort((a, b) => (b.registered ?? 0) - (a.registered ?? 0))
+    .map(r => `<tr><td>${r.icb_name.replace(" Integrated Care Board", "")}</td><td>${fmt(r.residents)}</td>
+               <td>${fmt(r.registered)}</td><td>${r.registered_per_resident ?? "–"}</td></tr>`).join("");
+
+  // data quality from the pipeline's reconciliation metrics
+  const rows = [
+    ["Synthetic people / registrations", `${fmt(m("synthetic_registrations", "people"))} / ${fmt(m("synthetic_registrations", "registrations"))}`],
+    ["Quarantined (unusable records)", fmt(m("silver_registrations", "quarantined"))],
+    ["&nbsp;&nbsp;blank postcode", fmt(m("silver_registrations", "q_blank_postcode"))],
+    ["&nbsp;&nbsp;invalid postcode format", fmt(m("silver_registrations", "q_invalid_postcode_format"))],
+    ["&nbsp;&nbsp;postcode not in NHSPD", fmt(m("silver_registrations", "q_postcode_not_in_nhspd"))],
+    ["&nbsp;&nbsp;invalid NHS number (check digit)", fmt(m("silver_registrations", "q_invalid_nhs_number"))],
+    ["Duplicate registrations removed", fmt(m("silver_registrations", "duplicates_removed"))],
+    ["Messy postcodes fixed", fmt(m("silver_registrations", "flag_postcode_reformatted"))],
+    ["Typos that are real postcodes (undetectable)",
+      fmt((m("silver_registrations", "truth_expected_quarantine") ?? 0) - (m("silver_registrations", "truth_caught") ?? 0))],
+  ];
+  document.querySelector("#dq tbody").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+
+  document.getElementById("method").innerHTML = `<h2>Method</h2>
+    <p class="note">NHSPD ${summary.nhspd_release}, ODS practices ${summary.ods_snapshot}, LSOA 2021 boundaries
+    (simplified to 10 m for the web). Disclosure control: counts 1-${summary.disclosure.suppress_below - 1}
+    suppressed, others rounded to the nearest ${summary.disclosure.round_to}; ratios use exact counts and are
+    suppressed with them. Synthetic list inflation is uniform (5%) by design, so differences between
+    areas are mostly noise. Contains public sector information licensed under the Open Government Licence v3.0.
+    Basemap © OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors. Run <code>${summary.run_id}</code>.</p>`;
+
+  // map
+  const map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron",
+                                   bounds: [[-3.95, 50.45], [-2.85, 51.0]] });
+  map.addControl(new maplibregl.NavigationControl(), "top-right");
+  map.on("load", () => {
+    // hatch pattern for suppressed areas
+    const c = document.createElement("canvas"); c.width = c.height = 8;
+    const g = c.getContext("2d"); g.strokeStyle = css("--hatch"); g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(0, 8); g.lineTo(8, 0); g.stroke();
+    map.addImage("hatch", g.getImageData(0, 0, 8, 8));
+
+    map.addSource("lsoa", { type: "geojson", data: lsoa });
+    map.addLayer({ id: "lsoa-fill", type: "fill", source: "lsoa",
+      filter: ["!=", ["get", "registered_per_resident"], null],
+      paint: { "fill-opacity": 0.75, "fill-color": ["step", ["get", "registered_per_resident"],
+        css("--r0"), 1.03, css("--r1"), 1.04, css("--r2"), 1.05, css("--r3"), 1.07, css("--r4")] } });
+    map.addLayer({ id: "lsoa-suppressed", type: "fill", source: "lsoa",
+      filter: ["==", ["get", "registered_per_resident"], null], paint: { "fill-pattern": "hatch" } });
+    map.addLayer({ id: "lsoa-line", type: "line", source: "lsoa",
+      paint: { "line-color": "#ffffff", "line-width": 0.5, "line-opacity": 0.8 } });
+
+    map.addSource("practices", { type: "geojson", data: practices });
+    map.addLayer({ id: "practices", type: "circle", source: "practices", paint: {
+      "circle-radius": ["interpolate", ["linear"], ["sqrt", ["coalesce", ["get", "list_size"], 0]], 0, 2, 150, 14],
+      "circle-color": css("--ink"), "circle-opacity": 0.55, "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
+
+    const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+    const show = (e, html) => { map.getCanvas().style.cursor = "pointer"; popup.setLngLat(e.lngLat).setHTML(html).addTo(map); };
+    const hide = () => { map.getCanvas().style.cursor = ""; popup.remove(); };
+    for (const id of ["lsoa-fill", "lsoa-suppressed"]) {
+      map.on("mousemove", id, e => { const p = e.features[0].properties;
+        show(e, `<b>${p.lsoa21_name}</b> <code>${p.lsoa21_code}</code><br>residents ${fmt(JSON.parse(p.residents))}
+                 · registered ${fmt(JSON.parse(p.registered))}<br>ratio ${p.registered_per_resident ?? "<i>suppressed</i>"}`); });
+      map.on("mouseleave", id, hide);
+    }
+    map.on("mousemove", "practices", e => { const p = e.features[0].properties;
+      show(e, `<b>${p.practice_name}</b> <code>${p.practice_code}</code><br>list size ${fmt(JSON.parse(p.list_size))}`); });
+    map.on("mouseleave", "practices", hide);
+  });
+})();
+</script>
+</body>
+</html>

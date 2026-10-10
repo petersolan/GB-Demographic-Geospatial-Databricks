@@ -30,6 +30,23 @@ def make_valid_wkb(wkb: pd.Series) -> pd.Series:
     return pd.Series(list(shapely.to_wkb(fixed)), index=wkb.index)
 
 
+
+def simplify_wkb(tolerance_m: float):
+    """pandas UDF factory: simplify polygons (in BNG metres) for web display, keeping them valid.
+
+    Simplify in a projected CRS (metres) before re-projecting to WGS84 for the web: a tolerance in
+    degrees would distort shapes unevenly. Databricks has no ST_Simplify, so Shapely does it.
+    """
+
+    @pandas_udf(BinaryType())
+    def _simplify(wkb: pd.Series) -> pd.Series:
+        import shapely
+
+        geoms = shapely.simplify(shapely.from_wkb(wkb.to_numpy()), tolerance_m, preserve_topology=True)
+        return pd.Series(list(shapely.to_wkb(geoms)), index=wkb.index)
+
+    return _simplify
+
 def boundaries(df: DataFrame, code_col: str, name_col: str) -> DataFrame:
     """Bronze boundary rows -> code, name, edition, bbox, native GEOMETRY in BNG, validity.
 

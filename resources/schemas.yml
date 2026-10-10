@@ -21,3 +21,10 @@ resources:
       schema_name: ${resources.schemas.bronze.name}
       volume_type: MANAGED
       comment: Files uploaded from local downloads (Free Edition has no general outbound internet).
+
+    exports:
+      name: exports
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.gold.name}
+      volume_type: MANAGED
+      comment: Protected (disclosure-controlled) files for publication. Nothing record-level.

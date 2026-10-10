@@ -7,6 +7,7 @@ def test_layout_names():
     assert lay.bronze("nhspd") == "workspace.dev_x_gbdemo_bronze.nhspd"
     assert lay.gold("registered_vs_resident") == "workspace.dev_x_gbdemo_gold.registered_vs_resident"
     assert lay.landing_path == "/Volumes/workspace/dev_x_gbdemo_bronze/landing"
+    assert lay.exports_path == "/Volumes/workspace/dev_x_gbdemo_gold/exports"
 
 
 def test_runtime_parses_job_parameters():

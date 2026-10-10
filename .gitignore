@@ -1,5 +1,6 @@
-# Data stays out of git (downloads are large and re-creatable by scripts)
-data/
+# Data stays out of git (downloads are large and re-creatable by scripts).
+# Leading slash = repo root only, so site/data/ (protected aggregates for the site) is kept.
+/data/
 
 # Python
 __pycache__/

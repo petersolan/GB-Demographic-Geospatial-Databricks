@@ -15,6 +15,7 @@ class Layout:
     silver_schema: str
     gold_schema: str
     landing_volume: str = "landing"
+    exports_volume: str = "exports"
 
     def bronze(self, table: str) -> str:
         return f"{self.catalog}.{self.bronze_schema}.{table}"
@@ -28,3 +29,8 @@ class Layout:
     @property
     def landing_path(self) -> str:
         return f"/Volumes/{self.catalog}/{self.bronze_schema}/{self.landing_volume}"
+
+    @property
+    def exports_path(self) -> str:
+        """Files meant to leave the platform: gold schema only, never beside raw data."""
+        return f"/Volumes/{self.catalog}/{self.gold_schema}/{self.exports_volume}"
