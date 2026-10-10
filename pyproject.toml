@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gbdemo"
+version = "0.1.0"
+description = "Databricks pipelines joining demographic records to GB geographic reference data"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Peter S" }]
+# PySpark is NOT listed: Databricks provides its own Spark, and installing PySpark on
+# serverless compute breaks the session. Local tests get it from requirements-dev.txt.
+dependencies = [
+    "shapely>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["src"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests", "pipelines"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle + pyflakes basics, I: import order, B: likely bugs, UP: modern syntax
+select = ["E", "F", "I", "B", "UP"]

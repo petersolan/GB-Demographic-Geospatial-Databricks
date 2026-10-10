@@ -17,3 +17,8 @@ derby.log
 .databricks/
 .databrickscfg
 .env
+
+# Wheel build leftovers (the bundle builds dist/*.whl on deploy)
+build/
+dist/
+*.egg-info/

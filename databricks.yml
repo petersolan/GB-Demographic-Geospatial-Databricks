@@ -1,0 +1,32 @@
+# Databricks Asset Bundle: everything deployed to Databricks is declared here and in resources/.
+# Deploy:  databricks bundle deploy            (dev, the default target)
+# Run:     databricks bundle run gbdemo_pipeline
+bundle:
+  name: gbdemo
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds the bronze/silver/gold schemas
+    default: workspace
+
+# Build the gbdemo package as a wheel on deploy; job tasks install it from the upload.
+artifacts:
+  gbdemo_wheel:
+    type: whl
+    path: .
+    build: python -m build --wheel
+
+targets:
+  dev:
+    # Development mode prefixes names with "dev_<user>" / "[dev <user>]",
+    # so experiments never collide with production objects.
+    mode: development
+    default: true
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}

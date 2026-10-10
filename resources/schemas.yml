@@ -1,0 +1,23 @@
+# One schema per medallion layer, so permissions can be granted per layer.
+resources:
+  schemas:
+    bronze:
+      name: gbdemo_bronze
+      catalog_name: ${var.catalog}
+      comment: Raw landed data, as received. Restricted.
+    silver:
+      name: gbdemo_silver
+      catalog_name: ${var.catalog}
+      comment: Cleaned, standardised and geographically enriched records. Restricted.
+    gold:
+      name: gbdemo_gold
+      catalog_name: ${var.catalog}
+      comment: Disclosure-controlled aggregates for analysts and publication.
+
+  volumes:
+    landing:
+      name: landing
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.bronze.name}
+      volume_type: MANAGED
+      comment: Files uploaded from local downloads (Free Edition has no general outbound internet).
