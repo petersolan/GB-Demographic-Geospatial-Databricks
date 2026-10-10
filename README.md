@@ -9,6 +9,8 @@ Everything else is real open data.
 
 [![CI](https://github.com/petersolan/GB-Demographic-Geospatial-Databricks/actions/workflows/ci.yml/badge.svg)](https://github.com/petersolan/GB-Demographic-Geospatial-Databricks/actions/workflows/ci.yml)
 
+**[Live results site](https://petersolan.github.io/GB-Demographic-Geospatial-Databricks/)**: the published, disclosure-controlled outputs on a map.
+
 ![Results site: registered per resident by LSOA](docs/images/results_site.png)
 
 *The results site (`site/`): synthetic GP registrations vs Census 2021 residents per LSOA for Exeter,
@@ -102,7 +104,8 @@ measured against the synthetic ground truth (1,173 such typos, 507,877 correct r
 | "Large user" (business) postcode | 79 | 2,548 | **removed** |
 
 The large-user rule mostly flagged real residents of care homes, hospitals and student halls: imprecise
-and biased against a vulnerable group, so it was removed. \* The Census rule's zero false alarms is
+and biased against a vulnerable group, so it was removed (its figures are from the last run that
+included it). \* The Census rule's zero false alarms is
 partly an artefact of the generator (synthetic people only live where the Census found residents);
 real data would produce some (conversions since 2021, Census non-response).
 
@@ -139,9 +142,9 @@ pipelines/         thin job entry points (one per task)
 resources/         bundle resources: schemas, volumes, pipeline job, integration-test job
 databricks.yml     bundle definition: wheel build, variables, dev / prod targets
 scripts/           download, prepare, upload, secret setup, fetch site data, run tests
-tests/unit/        68 unit tests (Docker locally, GitHub Actions in CI)
+tests/unit/        69 unit tests (Docker locally, GitHub Actions in CI)
 tests/integration/ spatial tests that run pytest inside a Databricks job
-site/              static results page (MapLibre) + protected data files
+site/              static results page (MapLibre) + protected data files, deployed to GitHub Pages
 ```
 
 ## Running it

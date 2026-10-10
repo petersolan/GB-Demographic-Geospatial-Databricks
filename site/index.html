@@ -74,7 +74,8 @@ code { font-family: var(--mono); font-size: 12px; }
     <h2>By integrated care board</h2>
     <table id="icb"><thead><tr><th>ICB</th><th>Residents</th><th>Registered</th><th>Ratio</th></tr></thead><tbody></tbody></table>
     <p class="note" style="margin-top:6px">Rows outside Devon are registrations placed there by postcode typos
-      that are real postcodes elsewhere; their counts are 1-9 and therefore suppressed.</p>
+      that are real postcodes elsewhere; their counts are 1-9 and therefore suppressed. Residents are counted
+      only in the four study districts.</p>
   </section>
 
   <section>
@@ -112,7 +113,7 @@ code { font-family: var(--mono); font-size: 12px; }
   // ICB table (protected values)
   document.querySelector("#icb tbody").innerHTML = summary.icb_summary
     .sort((a, b) => (b.registered ?? 0) - (a.registered ?? 0))
-    .map(r => `<tr><td>${r.icb_name.replace(" Integrated Care Board", "")}</td><td>${fmt(r.residents)}</td>
+    .map(r => `<tr><td>${r.icb_name.replace(" Integrated Care Board", "")}</td><td>${r.residents ? fmt(r.residents) : "–"}</td>
                <td>${fmt(r.registered)}</td><td>${r.registered_per_resident ?? "–"}</td></tr>`).join("");
 
   // data quality from the pipeline's reconciliation metrics
