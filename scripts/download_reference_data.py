@@ -20,7 +20,7 @@ LANDING = ROOT / "data" / "landing"
 UA = {"User-Agent": "GB-Demographic-Geospatial-Databricks (portfolio project)"}
 
 ARCGIS_ITEM = "https://www.arcgis.com/sharing/rest/content/items/{id}/data"
-HUB_EXPORT = "https://hub.arcgis.com/api/download/v1/items/{id}/geoPackage?redirect=false&layers=0"
+HUB_EXPORT = "https://hub.arcgis.com/api/download/v1/items/{id}/{fmt}?redirect=false&layers=0"
 ODS_EPRACCUR = "https://www.odsdatasearchandexport.nhs.uk/api/getReport?report=epraccur"
 
 # dataset, version, how to fetch, source id/url, file name, description
@@ -37,6 +37,11 @@ SOURCES = [
      "Integrated Care Boards (April 2023) Boundaries EN BFC, BNG"),
     ("icb_bfc", "2026-04", "hub_gpkg", "56ea2366d7274cefb33dd2d83e9f6a10", "icb_2026_04_bfc.gpkg",
      "Integrated Care Boards (April 2026) Boundaries EN BFC, BNG"),
+    # NHSPD gives ICBs as 3-character NHS ODS codes; boundaries use 9-character ONS GSS codes
+    ("icb_codes", "2023-04", "hub_csv", "6924fa126d7a428782eda4b374b6d734", "icb_codes_2023_04.csv",
+     "Integrated Care Boards (April 2023) Names and Codes in EN: GSS code, ODS code, name"),
+    ("icb_codes", "2026-04", "hub_csv", "ff00c7228a5e4f1fa1fdf6bd81e15a1f", "icb_codes_2026_04.csv",
+     "Integrated Care Boards (April 2026) Names and Codes in EN: GSS code, ODS code, name"),
     # ODS publishes only the current list: our dated snapshots ARE the version history
     ("ods_epraccur", dt.date.today().isoformat(), "url", ODS_EPRACCUR, "epraccur.csv",
      "ODS GP practices (epraccur), current snapshot on download date; no header row"),
@@ -52,10 +57,10 @@ def fetch(url: str, dest: Path) -> None:
     tmp.replace(dest)  # only a complete download gets the real name
 
 
-def hub_export_url(item_id: str, attempts: int = 60) -> str:
+def hub_export_url(item_id: str, fmt: str, attempts: int = 60) -> str:
     """ArcGIS Hub builds export files on request: poll until it reports Completed."""
     for _ in range(attempts):
-        req = urllib.request.Request(HUB_EXPORT.format(id=item_id), headers=UA)
+        req = urllib.request.Request(HUB_EXPORT.format(id=item_id, fmt=fmt), headers=UA)
         with urllib.request.urlopen(req, timeout=120) as r:
             body = json.load(r)
         if body.get("status") == "Completed" and body.get("resultUrl"):
@@ -87,7 +92,8 @@ def main(only: list[str]) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         print(f"get   {key}", flush=True)
         url = (ARCGIS_ITEM.format(id=src) if kind == "arcgis_item"
-               else hub_export_url(src) if kind == "hub_gpkg" else src)
+               else hub_export_url(src, "geoPackage") if kind == "hub_gpkg"
+               else hub_export_url(src, "csv") if kind == "hub_csv" else src)
         fetch(url, dest)
         manifest[key] = {
             "dataset": dataset, "version": version, "description": desc,

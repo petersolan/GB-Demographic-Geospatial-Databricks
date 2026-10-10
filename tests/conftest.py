@@ -5,7 +5,8 @@ from pyspark.sql import SparkSession
 
 
 @pytest.fixture(scope="session")
-def spark():
+def spark(tmp_path_factory):
+    warehouse = tmp_path_factory.mktemp("warehouse")  # where saveAsTable puts local tables
     builder = (
         SparkSession.builder.master("local[2]")
         .appName("tests")
@@ -13,6 +14,7 @@ def spark():
         .config("spark.driver.host", "127.0.0.1")
         .config("spark.driver.bindAddress", "127.0.0.1")
         .config("spark.ui.enabled", "false")
+        .config("spark.sql.warehouse.dir", str(warehouse))
         # tiny test data: 2 shuffle partitions instead of the default 200 keeps tests fast
         .config("spark.sql.shuffle.partitions", "2")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")

@@ -20,6 +20,9 @@ resources:
               - ${resources.schemas.silver.name}
               - --gold-schema
               - ${resources.schemas.gold.name}
+              # filled in by Databricks at run time: every row can be traced to its job run
+              - --run-id
+              - "{{job.run_id}}"
 
         - task_key: silver_postcodes
           depends_on: [{ task_key: bronze_ingest }]
