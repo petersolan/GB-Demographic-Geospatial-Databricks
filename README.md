@@ -24,9 +24,9 @@ East Devon, Mid Devon and Teignbridge. Every number is disclosure-controlled.*
 | CRS + geometry validation | BNG (EPSG:27700) throughout, WGS84 only for the web; `ST_IsValid`, Shapely repair UDF (no `ST_MakeValid` in Databricks); WKT / WKB / GeoJSON / GeoParquet |
 | Versioned lookups and boundaries | ICB code and boundary editions as SCD2 (`valid_from` / `valid_to`); each NHSPD release joined to the edition in force; Delta time travel |
 | Data quality + reconciliation | Flags per row, quarantine tables, rows-in = rows-out assertions after every join, metrics table per run, results measured against a ground truth |
-| Spark optimisation | Bounding-box pre-filter for point-in-polygon, broadcast joins for lookups, idempotent per-version writes, repair runs |
+| Spark optimisation | Benchmark job from 10k to 2.4M points with timeouts and query-plan capture; broadcast joins for lookups; idempotent per-version writes; repair runs |
 | Access, pseudonymisation, disclosure control | Column mask on raw NHS numbers; HMAC-SHA256 `patient_id` with the key in a secret scope; year of birth + age band only (data minimisation); counts 1-9 suppressed and others rounded to 5 |
-| Git, CI/CD, automated tests | GitHub Actions (ruff + 68 unit tests on open-source PySpark); integration tests that run pytest inside a Databricks job; bundle `dev` / `prod` targets |
+| Git, CI/CD, automated tests | GitHub Actions (ruff + 69 unit tests on open-source PySpark); integration tests that run pytest inside a Databricks job; bundle `dev` / `prod` targets |
 
 ## Architecture
 
@@ -63,14 +63,48 @@ only disclosure-controlled values and is the only source of anything that leaves
   NHS Hampshire and Isle of Wight kept its name with a new code (join on codes, never names).
 - **Rule-based validation has a blind spot.** Blank, malformed and bad-check-digit records were all
   caught (100% against the injected defects), but 1,173 of 1,291 postcode typos produced real postcodes
-  elsewhere and cannot be detected by format or NHSPD-membership checks. A distance-to-practice
-  plausibility check or address (UPRN) matching would be the next step.
+  elsewhere and cannot be detected by format or NHSPD-membership checks. Plausibility rules flag 145 of
+  them (12%) for review, with 4 false alarms in 507,877 correct records (see below). The real fix is
+  address-level (UPRN) matching.
 - **Points in water.** 23 Devon postcodes fall in no LSOA: estimated positions of terminated postcodes in
   the Exe and Taw estuaries, Plymouth Sound and the Tamar. The coast-clipped (BFC) boundaries exclude
   tidal water; these rows are kept, counted and fall back to NHSPD's assignment.
 - **Real data is messier than rules.** NHSPD contains the historic Newport `NPT` postcode area and
   Girobank's `GIR 0AA`, both outside the usual postcode pattern, and 850 non-geographic postcodes with
   no location.
+
+## Performance
+
+Point-in-polygon of located postcodes against all 35,672 LSOAs in England and Wales, on Databricks Free
+Edition serverless (`resources/benchmark_job.yml`). Two query forms: `ST_Covers` alone, and a manual
+bounding-box pre-filter followed by `ST_Covers`.
+
+| Points | `ST_Covers` only | bbox + `ST_Covers` | Join operator in the physical plan |
+|---|---|---|---|
+| 10,000 (South West sample) | 5.2 s | 5.7 s | `PhotonShuffledSpatialJoin` |
+| 254,416 (South West region) | 6.0 s | 5.8 s | `PhotonShuffledSpatialJoin` |
+| 2,413,799 (England and Wales) | 8.4 s | 8.1 s | `PhotonShuffledSpatialJoin` |
+
+240 times more points cost about 1.6 times the time, and the manual pre-filter changes nothing: the
+plan shows Databricks' native spatial join (Photon) partitions space and filters internally for both
+forms. The hand-written optimisation was measured, found redundant on this engine, and would only
+pay off on an engine without a spatial join operator.
+
+## Plausibility checks
+
+Typos that land on other real postcodes pass every format and lookup check. Candidate rules were
+measured against the synthetic ground truth (1,173 such typos, 507,877 correct records):
+
+| Rule | Typos flagged | Correct records flagged | Kept? |
+|---|---|---|---|
+| Postcode where Census 2021 found no residents (and it existed before Census day) | 143 | 0 * | yes |
+| Home more than 15 km from the practice | 2 | 4 | yes |
+| "Large user" (business) postcode | 79 | 2,548 | **removed** |
+
+The large-user rule mostly flagged real residents of care homes, hospitals and student halls: imprecise
+and biased against a vulnerable group, so it was removed. \* The Census rule's zero false alarms is
+partly an artefact of the generator (synthetic people only live where the Census found residents);
+real data would produce some (conversions since 2021, Census non-response).
 
 ## Privacy and disclosure control
 

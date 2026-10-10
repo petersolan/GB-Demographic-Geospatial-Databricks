@@ -125,6 +125,7 @@ code { font-family: var(--mono); font-size: 12px; }
     ["&nbsp;&nbsp;invalid NHS number (check digit)", fmt(m("silver_registrations", "q_invalid_nhs_number"))],
     ["Duplicate registrations removed", fmt(m("silver_registrations", "duplicates_removed"))],
     ["Messy postcodes fixed", fmt(m("silver_registrations", "flag_postcode_reformatted"))],
+    ["Typos flagged for review (plausibility)", fmt(m("silver_registrations", "typo_flagged_plausibility"))],
     ["Typos that are real postcodes (undetectable)",
       fmt((m("silver_registrations", "truth_expected_quarantine") ?? 0) - (m("silver_registrations", "truth_caught") ?? 0))],
   ];

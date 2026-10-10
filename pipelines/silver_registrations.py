@@ -12,6 +12,7 @@ from gbdemo.runtime import check_schema, get_spark, parse_args, parse_layout
 
 SECRET_SCOPE, SECRET_KEY = "gbdemo", "pseudonym_key"
 EXPECTED_BLOCKED = ("blank_postcode", "invalid_format", "unknown_postcode", "bad_check_digit")
+PLAUSIBILITY = ("postcode_no_census_residents", "far_from_practice")
 
 
 def main() -> None:
@@ -37,6 +38,9 @@ def main() -> None:
         practices_all.where(F.col("ods_snapshot") == snapshot),
         key,
         str(snapshot_date),
+        census=spark.table(layout.bronze("census_postcode_population")).select(
+            "postcode", F.col("total").alias("residents")
+        ),
     )
 
     for df, name in ((clean, "registrations"), (quarantine, "registration_quarantine")):
@@ -61,6 +65,18 @@ def main() -> None:
     )
     q = spark.table(layout.silver("registration_quarantine")).select("patient_id").distinct()
     caught = expected.join(q, "patient_id").count()
+
+    # plausibility vs truth: typos that passed validation, and correct records flagged by mistake
+    silver_regs = spark.table(layout.silver("registrations"))
+    plausible_flag = F.arrays_overlap("dq_flags", F.array(*[F.lit(x) for x in PLAUSIBILITY]))
+    truth_ids = truth.withColumn("patient_id", nhs_number.pseudonymise_col(F.col("nhs_number_recorded"), key))
+    accepted_typos = truth_ids.where(F.col("defect") == "unknown_postcode").join(silver_regs, "patient_id")
+    correct = (
+        truth_ids.where(F.col("defect").isNull())
+        .select("patient_id")
+        .distinct()
+        .join(silver_regs, "patient_id")
+    )
     log(
         "silver_registrations",
         release,
@@ -68,6 +84,19 @@ def main() -> None:
             **counts,
             "truth_expected_quarantine": expected.count(),
             "truth_caught": caught,
+            "typo_accepted": accepted_typos.count(),
+            "typo_flagged_plausibility": accepted_typos.where(plausible_flag).count(),
+            "correct_records": correct.count(),
+            "correct_records_flagged": correct.where(plausible_flag).count(),
+            # per flag: typos caught vs correct records flagged (precision of each rule)
+            **{
+                f"typo_flagged_{f}": accepted_typos.where(F.array_contains("dq_flags", f)).count()
+                for f in PLAUSIBILITY
+            },
+            **{
+                f"correct_flagged_{f}": correct.where(F.array_contains("dq_flags", f)).count()
+                for f in PLAUSIBILITY
+            },
             **reconcile.value_counts(spark.table(layout.silver("registration_quarantine")), "dq_flags", "q_"),
             **reconcile.value_counts(spark.table(layout.silver("registrations")), "dq_flags", "flag_"),
         },

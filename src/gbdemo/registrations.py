@@ -9,6 +9,14 @@ Job ad: "Apply access, pseudonymisation and disclosure controls to sensitive dat
 - Duplicate registrations of one person keep the most recent registration.
 - Data minimisation: silver keeps year of birth and a 5-year age band, not the date of birth.
 - Reconciliation: rows in = clean + quarantined + duplicates removed (asserted by the job).
+
+Plausibility (informational, never blocking): a typo can turn one real postcode into another real
+one, which format and NHSPD checks can't see. Two checks are kept, measured against the synthetic
+ground truth: a postcode where Census 2021 found nobody (only if it existed before Census day, as
+new-builds would legitimately have no residents) and a home far from the practice.
+A "large user" (business) postcode check was tried and removed: it flagged 2,548 correct records
+for 79 typos (3% precision), mostly real residents of care homes, hospitals and student halls,
+i.e. biased against a vulnerable group.
 """
 
 from pyspark.sql import DataFrame, Window
@@ -25,6 +33,8 @@ BLOCKING = (
     "postcode_not_in_nhspd",
     "postcode_no_location",
 )
+CENSUS_DAY = "2021-03-21"
+FAR_FROM_PRACTICE_M = 15_000
 
 
 def age_band(age) -> F.Column:
@@ -35,17 +45,51 @@ def age_band(age) -> F.Column:
     )
 
 
+def plausibility(r: DataFrame, in_nhspd, with_census: bool, with_xy: bool) -> list:
+    """(condition, flag) pairs for the plausibility checks whose inputs are available."""
+    checks = []
+    if with_census and "date_introduced" in r.columns:
+        existed = F.col("date_introduced") <= F.lit(CENSUS_DAY).cast("date")
+        checks.append(
+            (in_nhspd & existed & F.col("has_census_residents").isNull(), "postcode_no_census_residents")
+        )
+    if with_xy:
+        dist = F.sqrt((F.col("easting") - F.col("pr_e")) ** 2 + (F.col("northing") - F.col("pr_n")) ** 2)
+        checks.append((F.coalesce(dist > FAR_FROM_PRACTICE_M, F.lit(False)), "far_from_practice"))
+    return checks
+
+
 def clean(
-    registrations: DataFrame, postcodes: DataFrame, practices: DataFrame, key: str, reference_date: str
+    registrations: DataFrame,
+    postcodes: DataFrame,
+    practices: DataFrame,
+    key: str,
+    reference_date: str,
+    census: DataFrame | None = None,
 ) -> tuple[DataFrame, DataFrame, dict]:
     """Return (clean registrations, quarantine, counts) from raw registrations.
 
-    postcodes: one NHSPD release (silver.postcode rows); practices: silver.gp_practice rows.
+    postcodes: one NHSPD release (silver.postcode rows); practices: silver.gp_practice rows;
+    census (optional): postcode, residents. Plausibility checks run only for the inputs supplied.
     """
+    optional = [c for c in ("user_type", "northing", "date_introduced") if c in postcodes.columns]
     pc = postcodes.select(
-        "postcode", "is_live", "easting", "lsoa21_code", "msoa21_code", "icb_gss", "lad_code", "grid_quality"
+        "postcode",
+        "is_live",
+        "easting",
+        "lsoa21_code",
+        "msoa21_code",
+        "icb_gss",
+        "lad_code",
+        "grid_quality",
+        *optional,
     )
-    known = practices.select("practice_code", F.lit(True).alias("practice_known"))
+    has_xy = {"easting", "northing"} <= set(practices.columns) and "northing" in optional
+    known = practices.select(
+        "practice_code",
+        F.lit(True).alias("practice_known"),
+        *([F.col("easting").alias("pr_e"), F.col("northing").alias("pr_n")] if has_xy else []),
+    )
     ref = F.lit(reference_date).cast("date")
 
     r = (
@@ -55,6 +99,13 @@ def clean(
         .join(pc.withColumnRenamed("postcode", "postcode_norm"), "postcode_norm", "left")
         .join(F.broadcast(known), "practice_code", "left")
     )
+    if census is not None:
+        residential = (
+            census.select(normalise_postcode(F.col("postcode")).alias("postcode_norm"), "residents")
+            .where("residents > 0")
+            .select("postcode_norm", F.lit(True).alias("has_census_residents"))
+        )
+        r = r.join(residential, "postcode_norm", "left")
 
     blank = F.coalesce(F.trim(F.col("postcode")), F.lit("")) == ""
     in_nhspd = F.col("is_live").isNotNull()
@@ -69,6 +120,7 @@ def clean(
             (in_nhspd & ~F.coalesce(F.col("is_live"), F.lit(True)), "postcode_terminated"),
             (F.col("practice_known").isNull(), "unknown_practice"),
             (~blank & (F.col("postcode_norm") != F.trim(F.col("postcode"))), "postcode_reformatted"),
+            *plausibility(r, in_nhspd, census is not None, has_xy),
         ),
     ).withColumn("is_blocked", F.arrays_overlap("dq_flags", F.array(*[F.lit(x) for x in BLOCKING])))
 
