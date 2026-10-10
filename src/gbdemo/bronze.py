@@ -75,12 +75,12 @@ def with_lineage(df: DataFrame, dataset: str, version: str, run_id: str) -> Data
     )
 
 
-def write_version(df: DataFrame, table: str, version: str) -> None:
+def write_version(df: DataFrame, table: str, version: str, column: str = "_version") -> None:
     """Overwrite only this version's rows (Delta replaceWhere): idempotent re-runs."""
     (
         df.write.format("delta")
         .mode("overwrite")
-        .option("replaceWhere", f"_version = '{version}'")
+        .option("replaceWhere", f"{column} = '{version}'")
         .saveAsTable(table)
     )
 
