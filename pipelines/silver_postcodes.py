@@ -14,20 +14,14 @@ from gbdemo.runtime import check_schema, get_spark, parse_args, parse_layout
 
 def flag_counts(df) -> dict:
     """{'flag_<name>': rows} for every dq flag present."""
-    rows = df.select(F.explode("dq_flags").alias("f")).groupBy("f").count().collect()
-    return {f"flag_{r.f}": r["count"] for r in rows}
+    return reconcile.value_counts(df, "dq_flags", "flag_")
 
 
 def main() -> None:
     args, layout = parse_args(), parse_layout()
     spark = get_spark()
     check_schema(spark, layout.catalog, layout.silver_schema)
-    recon = layout.silver("reconciliation")
-
-    def log(step: str, version: str, metrics: dict) -> None:
-        reconcile.record(spark, recon, args.run_id, step, version, metrics)
-        shown = ", ".join(f"{k}={v:,}" for k, v in sorted(metrics.items()))
-        print(f"  {step} {version}: {shown}", flush=True)
+    log = reconcile.Recorder(spark, layout.silver("reconciliation"), args.run_id)
 
     # 1. versioned ICB code lookup (small: rebuilt in full each run)
     lookup = silver.icb_lookup(spark.table(layout.bronze("icb_codes")))

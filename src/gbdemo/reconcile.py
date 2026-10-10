@@ -28,3 +28,24 @@ def record(spark: SparkSession, table: str, run_id: str, step: str, version: str
         .withColumn("recorded_at", F.current_timestamp())
         .write.format("delta").mode("append").saveAsTable(table)
     )
+
+
+class Recorder:
+    """Record a step's metrics to the reconciliation table and print them for the job log."""
+
+    def __init__(self, spark: SparkSession, table: str, run_id: str):
+        self.spark, self.table, self.run_id = spark, table, run_id
+
+    def __call__(self, step: str, version: str, metrics: dict) -> None:
+        record(self.spark, self.table, self.run_id, step, version, metrics)
+        shown = ", ".join(f"{k}={v:,}" for k, v in sorted(metrics.items()))
+        print(f"  {step} {version}: {shown}", flush=True)
+
+
+def value_counts(df, column: str, prefix: str) -> dict:
+    """{'<prefix><value>': rows} for each distinct value of a column (array columns are exploded)."""
+    from pyspark.sql import functions as F
+
+    col = F.explode(column) if dict(df.dtypes)[column].startswith("array") else F.col(column)
+    rows = df.select(col.alias("v")).groupBy("v").count().collect()
+    return {f"{prefix}{r.v}": r["count"] for r in rows}

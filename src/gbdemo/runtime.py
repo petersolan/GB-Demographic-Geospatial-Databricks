@@ -12,6 +12,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--silver-schema", required=True)
     p.add_argument("--gold-schema", required=True)
     p.add_argument("--run-id", default="local")
+    # silver_spatial: an ICB GSS code (e.g. E54000037 = Devon) or "all" for England and Wales
+    p.add_argument("--spatial-scope", default="all")
     a, _ = p.parse_known_args(argv)
     return a
 

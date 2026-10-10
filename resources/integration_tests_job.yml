@@ -1,0 +1,21 @@
+# Integration tests that need Databricks (native ST_* spatial functions): pytest runs inside the job
+# and its exit code decides success, so a failing test fails the run.
+resources:
+  jobs:
+    gbdemo_integration_tests:
+      name: gbdemo_integration_tests
+      tasks:
+        - task_key: spatial_tests
+          max_retries: 0
+          environment_key: default
+          spark_python_task:
+            python_file: ../tests/integration/run.py
+            # where the bundle uploaded the files (__file__ is undefined on serverless)
+            parameters: ["${workspace.file_path}/tests/integration"]
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+            dependencies:
+              - ../dist/*.whl
+              - pytest>=8

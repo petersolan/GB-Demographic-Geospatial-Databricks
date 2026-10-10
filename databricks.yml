@@ -11,6 +11,9 @@ variables:
   catalog:
     description: Unity Catalog catalog that holds the bronze/silver/gold schemas
     default: workspace
+  spatial_scope:
+    description: ICB GSS code limiting the spatial join (Devon by default), or "all"
+    default: E54000037
 
 # Build the gbdemo package as a wheel on deploy; job tasks install it from the upload.
 artifacts:
