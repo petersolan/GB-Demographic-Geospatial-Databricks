@@ -12,36 +12,63 @@ from gbdemo.disclosure import is_suppressed, protect, protect_ratio
 from gbdemo.postcodes import normalise_postcode
 
 
-def residents_by_lsoa(census: DataFrame, postcodes: DataFrame, lad_codes: list[str]) -> DataFrame:
-    """Census 2021 residents per LSOA (2021), located with one NHSPD release (Full: terminated too)."""
-    pc = postcodes.select("postcode", "lsoa21_code", "lad_code")
+def residents_by_area(
+    census: DataFrame, postcodes: DataFrame, lad_codes: list[str], code: str = "lsoa21_code"
+) -> DataFrame:
+    """Census 2021 residents per area (an NHSPD column such as lsoa21_code or msoa21_code),
+    located with one NHSPD release (Full: terminated postcodes resolve too)."""
+    pc = postcodes.select("postcode", code, "lad_code")
     return (
         census.select(normalise_postcode(F.col("postcode")).alias("postcode"), F.col("residents"))
         .join(pc, "postcode")
         .where(F.col("lad_code").isin(lad_codes))
-        .groupBy("lsoa21_code", "lad_code")
+        .groupBy(code, "lad_code")
         .agg(F.sum("residents").alias("residents"))
     )
 
 
+def residents_by_lsoa(census: DataFrame, postcodes: DataFrame, lad_codes: list[str]) -> DataFrame:
+    return residents_by_area(census, postcodes, lad_codes, "lsoa21_code")
+
+
+def registered_by_area(registrations: DataFrame, code: str = "lsoa21_code") -> DataFrame:
+    return registrations.groupBy(code).agg(F.count("*").alias("registered"))
+
+
 def registered_by_lsoa(registrations: DataFrame) -> DataFrame:
-    return registrations.groupBy("lsoa21_code").agg(F.count("*").alias("registered"))
+    return registered_by_area(registrations, "lsoa21_code")
 
 
-def lsoa_registered_vs_resident(
-    residents: DataFrame, registered: DataFrame, lsoa_names: DataFrame
+def area_registered_vs_resident(
+    residents: DataFrame, registered: DataFrame, names: DataFrame, code: str, name: str
 ) -> DataFrame:
-    """Registered patients vs Census residents per LSOA ("list inflation"), protected."""
-    exact = residents.join(registered, "lsoa21_code", "full").fillna(0, ["residents", "registered"])
-    return exact.join(lsoa_names, "lsoa21_code", "left").select(
-        "lsoa21_code",
-        "lsoa21_name",
+    """Registered patients vs Census residents per area ("list inflation"), protected.
+
+    Areas only in the registrations (homes outside the study districts, mostly postcode typos
+    that are real postcodes elsewhere) are kept by the full join, with no lad_code.
+    """
+    exact = residents.join(registered, code, "full").fillna(0, ["residents", "registered"])
+    return exact.join(names, code, "left").select(
+        code,
+        name,
         "lad_code",
         protect(F.col("residents")).alias("residents"),
         protect(F.col("registered")).alias("registered"),
         protect_ratio(F.col("registered"), F.col("residents")).alias("registered_per_resident"),
         (is_suppressed(F.col("residents")) | is_suppressed(F.col("registered"))).alias("any_suppressed"),
     )
+
+
+def lsoa_registered_vs_resident(
+    residents: DataFrame, registered: DataFrame, lsoa_names: DataFrame
+) -> DataFrame:
+    return area_registered_vs_resident(residents, registered, lsoa_names, "lsoa21_code", "lsoa21_name")
+
+
+def msoa_registered_vs_resident(
+    residents: DataFrame, registered: DataFrame, msoa_names: DataFrame
+) -> DataFrame:
+    return area_registered_vs_resident(residents, registered, msoa_names, "msoa21_code", "msoa21_name")
 
 
 def practice_profile(registrations: DataFrame, practices: DataFrame) -> DataFrame:

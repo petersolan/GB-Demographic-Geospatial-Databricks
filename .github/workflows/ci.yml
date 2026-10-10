@@ -1,5 +1,6 @@
-# Lint and unit tests on every push and pull request.
-# Spatial (ST_*) integration tests need Databricks and run there as a bundle job.
+# CI: lint and unit tests on every push and pull request.
+# CD: once both pass, the bundle is validated (pull requests) or deployed to prod (main).
+# Spatial (ST_*) and reproducibility integration tests need Databricks and run there as a bundle job.
 name: CI
 
 on:
@@ -33,3 +34,33 @@ jobs:
           java-version: "17"
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
+
+  bundle:
+    needs: [lint, unit-tests]
+    runs-on: ubuntu-latest
+    # one deployment at a time; a newer push waits rather than racing an older one
+    concurrency:
+      group: bundle-${{ github.ref }}
+      cancel-in-progress: false
+    # Repository secrets (Settings -> Secrets and variables -> Actions). Without them the job
+    # reports a notice and skips, so forks and the first push stay green.
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - if: env.DATABRICKS_TOKEN == ''
+        run: echo "::notice::DATABRICKS_HOST / DATABRICKS_TOKEN not set, skipping bundle validate and deploy"
+      - if: env.DATABRICKS_TOKEN != ''
+        uses: actions/checkout@v4
+      - if: env.DATABRICKS_TOKEN != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: env.DATABRICKS_TOKEN != ''
+        run: pip install build   # the bundle builds the gbdemo wheel on deploy
+      - if: env.DATABRICKS_TOKEN != ''
+        uses: databricks/setup-cli@v1.20.0
+      - if: env.DATABRICKS_TOKEN != ''
+        run: databricks bundle validate -t prod
+      - if: env.DATABRICKS_TOKEN != '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: databricks bundle deploy -t prod

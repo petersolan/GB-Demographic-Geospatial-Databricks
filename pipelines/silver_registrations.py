@@ -7,7 +7,7 @@ Results are measured against bronze.synthetic_truth (the defects we injected).
 
 from pyspark.sql import functions as F
 
-from gbdemo import nhs_number, reconcile, registrations
+from gbdemo import clustering, nhs_number, reconcile, registrations
 from gbdemo.runtime import check_schema, get_spark, parse_args, parse_layout
 
 SECRET_SCOPE, SECRET_KEY = "gbdemo", "pseudonym_key"
@@ -52,6 +52,8 @@ def main() -> None:
             .option("overwriteSchema", "true")
             .saveAsTable(layout.silver(name))
         )
+    # analysts' extracts are by area: cluster so an area's rows sit in few files as the table grows
+    clustering.cluster(spark, layout.silver("registrations"), ["lad_code", "lsoa21_code"])
     reconcile.assert_equal(
         "registrations: rows in = clean + quarantined + duplicates removed",
         counts["rows_in"],

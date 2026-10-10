@@ -1,4 +1,7 @@
-# One schema per medallion layer, so permissions can be granted per layer.
+# One schema per medallion layer, so access is granted per layer:
+#   bronze, silver: no grants (only the owner, i.e. the pipeline identity, can read them)
+#   gold:           analysts can read (USE_SCHEMA + SELECT), and read the exports volume
+# Within bronze, raw NHS numbers are also hidden by a column mask (pipelines/synthetic_registrations.py).
 resources:
   schemas:
     bronze:
@@ -13,6 +16,9 @@ resources:
       name: gbdemo_gold
       catalog_name: ${var.catalog}
       comment: Disclosure-controlled aggregates for analysts and publication.
+      grants:
+        - principal: ${var.analysts_group}
+          privileges: [USE_SCHEMA, SELECT]
 
   volumes:
     landing:
@@ -28,3 +34,6 @@ resources:
       schema_name: ${resources.schemas.gold.name}
       volume_type: MANAGED
       comment: Protected (disclosure-controlled) files for publication. Nothing record-level.
+      grants:
+        - principal: ${var.analysts_group}
+          privileges: [READ_VOLUME]

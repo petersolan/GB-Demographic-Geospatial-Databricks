@@ -7,7 +7,7 @@ Every step records metrics to silver.reconciliation and fails if row counts don'
 """
 from pyspark.sql import functions as F
 
-from gbdemo import reconcile, silver
+from gbdemo import clustering, reconcile, silver
 from gbdemo.bronze import write_version
 from gbdemo.runtime import check_schema, get_spark, parse_args, parse_layout
 
@@ -44,6 +44,9 @@ def main() -> None:
         log("postcode", release, {"rows_in": rows_in, "rows_out": rows_out,
                                   "icb_matched": written.where("icb_gss IS NOT NULL").count(),
                                   **flag_counts(written)})
+    # most reads take one release and one area: cluster on those so files can be skipped as the
+    # table grows (gbdemo.clustering explains why it changes nothing at today's size)
+    clustering.cluster(spark, postcode_table, ["nhspd_release", "lad_code"])
 
     # 3. GP practices: latest ODS snapshot, matched to the NHSPD release in force on that date
     ods = spark.table(layout.bronze("ods_epraccur"))

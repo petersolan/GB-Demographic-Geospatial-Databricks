@@ -43,3 +43,26 @@ def test_lsoa_registered_vs_resident(spark):
     )
     c = out["C"]  # registered but no census residents (full outer join keeps it)
     assert (c.residents, c.registered, c.registered_per_resident) == (0, 10, None)
+
+
+def test_msoa_registered_vs_resident(spark):
+    """Same rules one level up: LSOAs A and B both sit in MSOA M, so their counts add before protection."""
+    census = spark.createDataFrame([("EX1 1HS", 6), ("EX2 4NF", 7)], "postcode string, residents int")
+    postcodes = spark.createDataFrame(
+        [("EX1 1HS", "M", "E07000041"), ("EX2 4NF", "M", "E07000041")],
+        "postcode string, msoa21_code string, lad_code string",
+    )
+    regs = spark.createDataFrame([("M",)] * 14, "msoa21_code string")
+    names = spark.createDataFrame([("M", "Exeter 001")], "msoa21_code string, msoa21_name string")
+
+    res = gold.residents_by_area(census, postcodes, ["E07000041"], "msoa21_code")
+    registered = gold.registered_by_area(regs, "msoa21_code")
+    (m,) = gold.msoa_registered_vs_resident(res, registered, names).collect()
+    # 6 + 7 = 13 residents: safe once added up (each LSOA alone would be suppressed)
+    assert (m.msoa21_code, m.msoa21_name, m.residents, m.registered, m.registered_per_resident) == (
+        "M",
+        "Exeter 001",
+        15,
+        15,
+        1.077,
+    )

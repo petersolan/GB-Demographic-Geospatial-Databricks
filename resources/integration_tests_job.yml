@@ -5,13 +5,17 @@ resources:
     gbdemo_integration_tests:
       name: gbdemo_integration_tests
       tasks:
-        - task_key: spatial_tests
+        - task_key: integration_tests
           max_retries: 0
           environment_key: default
           spark_python_task:
             python_file: ../tests/integration/run.py
             # where the bundle uploaded the files (__file__ is undefined on serverless)
-            parameters: ["${workspace.file_path}/tests/integration"]
+            parameters:
+              - ${workspace.file_path}/tests/integration
+              # the pipeline's tables, for the reproducibility tests
+              - GBDEMO_SILVER=${var.catalog}.${resources.schemas.silver.name}
+              - GBDEMO_GOLD=${var.catalog}.${resources.schemas.gold.name}
       environments:
         - environment_key: default
           spec:
