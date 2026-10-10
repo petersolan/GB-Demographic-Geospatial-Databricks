@@ -1,0 +1,19 @@
+# Data stays out of git (downloads are large and re-creatable by scripts)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Spark / Delta local artefacts
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Databricks
+.databricks/
+.databrickscfg
+.env

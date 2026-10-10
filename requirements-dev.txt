@@ -1,0 +1,9 @@
+# Local / CI test environment. Versions match Databricks serverless where it matters:
+# serverless job reported Python 3.12 and Spark 4.2.0 (checked 2026-10-10).
+pyspark==4.2.0
+delta-spark==4.4.1      # supports pyspark >=4.0.1,<=4.2.0
+shapely==2.2.0          # same version Databricks serverless installed for us
+pandas>=2.2,<3.0      # PySpark 4.2 warns it does not yet fully support pandas 3
+pyarrow>=16
+pytest>=8
+ruff>=0.6

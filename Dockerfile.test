@@ -1,0 +1,23 @@
+# Linux test image: same OS family as GitHub Actions and Databricks, so no Windows/Hadoop quirks.
+# Build:  docker build -f Dockerfile.test -t gbdemo-test .
+# Run:    docker run --rm -v "<repo path>:/repo" gbdemo-test
+FROM python:3.12-slim-bookworm
+
+# Spark runs on the JVM; Debian 12 (bookworm) still ships Java 17
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
+ && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /repo
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# delta-spark downloads its Java libraries from Maven the first time Spark starts;
+# do it once at build time so test runs are fast and work offline
+RUN python -c "from delta import configure_spark_with_delta_pip as c; from pyspark.sql import SparkSession as S; \
+c(S.builder.master('local[1]').config('spark.ui.enabled','false')).getOrCreate().stop()"
+
+CMD ["pytest", "-q"]
