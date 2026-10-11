@@ -17,6 +17,10 @@ variables:
   synthetic_lads:
     description: LADs to generate synthetic patients for (999 test range fits ~909k people)
     default: E07000040,E07000041,E07000042,E07000045   # East Devon, Exeter, Mid Devon, Teignbridge
+  warehouse_id:
+    description: SQL warehouse that runs the dashboard's queries
+    lookup:
+      warehouse: Serverless Starter Warehouse
   analysts_group:
     description: >-
       Account-level group that may read gold (and nothing else). Free Edition has no account

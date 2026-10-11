@@ -1,0 +1,755 @@
+{
+  "datasets": [
+    {
+      "name": "lsoa",
+      "displayName": "LSOA calibration (gold)",
+      "queryLines": [
+        "SELECT lsoa21_code, lsoa21_name, CASE lad_code WHEN 'E07000040' THEN 'East Devon' WHEN 'E07000041' THEN 'Exeter' WHEN 'E07000042' THEN 'Mid Devon' WHEN 'E07000045' THEN 'Teignbridge' ELSE lad_code END AS district,\n",
+        "       residents, registered_synthetic, registered_nhs,\n",
+        "       synthetic_per_resident, nhs_per_resident, postcodes_since_census,\n",
+        "       CASE WHEN nhs_per_resident < 1 THEN 1 ELSE 0 END AS nhs_below_one, nhs_extract\n",
+        "FROM lsoa_calibration\n",
+        "ORDER BY nhs_per_resident DESC\n"
+      ]
+    },
+    {
+      "name": "district",
+      "displayName": "District comparison (gold)",
+      "queryLines": [
+        "WITH d AS (\n",
+        "  SELECT CASE lad_code WHEN 'E07000040' THEN 'East Devon' WHEN 'E07000041' THEN 'Exeter' WHEN 'E07000042' THEN 'Mid Devon' WHEN 'E07000045' THEN 'Teignbridge' ELSE lad_code END AS district, SUM(residents) AS residents,\n",
+        "         SUM(registered_synthetic) AS synthetic, SUM(registered_nhs) AS nhs\n",
+        "  FROM lsoa_calibration GROUP BY 1\n",
+        ")\n",
+        "SELECT district, 'Synthetic' AS list, ROUND(synthetic / residents, 3) AS registered_per_resident FROM d\n",
+        "UNION ALL\n",
+        "SELECT district, 'Real (NHS England)' AS list, ROUND(nhs / residents, 3) FROM d\n"
+      ]
+    },
+    {
+      "name": "practice",
+      "displayName": "Practice calibration (gold)",
+      "queryLines": [
+        "SELECT practice_code, practice_name, registered_synthetic, registered_nhs,\n",
+        "       registered_synthetic - registered_nhs AS synthetic_minus_real\n",
+        "FROM practice_calibration\n",
+        "WHERE coalesce(registered_synthetic, 0) >= 100 OR coalesce(registered_nhs, 0) >= 100\n",
+        "ORDER BY abs(registered_synthetic - registered_nhs) DESC\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Registered vs resident",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "intro",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Registered vs resident: Exeter and neighbouring districts\n",
+                "GP registrations per Census 2021 resident in East Devon, Exeter, Mid Devon and Teignbridge: the pipeline's **synthetic** list against **real** counts from NHS England's *Patients Registered at a GP Practice*. Reads only the gold layer, so every count is disclosure-controlled (1-9 suppressed, others rounded to 5); totals here are sums of rounded LSOA values.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_district",
+            "queries": [
+              {
+                "name": "f_lsoa",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "district",
+                      "expression": "`district`"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "f_district",
+                "query": {
+                  "datasetName": "district",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "district",
+                      "expression": "`district`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "district",
+                    "displayName": "District",
+                    "queryName": "f_lsoa"
+                  },
+                  {
+                    "fieldName": "district",
+                    "displayName": "District",
+                    "queryName": "f_district"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "District"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_res",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`residents`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Residents (Census 2021)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Residents (Census 2021)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c_syn",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`registered_synthetic`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Registered (synthetic)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Registered (synthetic)"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 4,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c_nhs",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`registered_nhs`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Registered (real)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Registered (real)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 4,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c_syn_r",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`registered_synthetic`) / SUM(`residents`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Synthetic per resident"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Synthetic per resident"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 4,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c_nhs_r",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`registered_nhs`) / SUM(`residents`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "Real per resident"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Real per resident"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c_below",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "SUM(`nhs_below_one`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value",
+                  "displayName": "LSOAs with fewer registered than residents (real)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "LSOAs with fewer registered than residents (real)"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 4,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_district",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "district",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "district",
+                      "expression": "`district`"
+                    },
+                    {
+                      "name": "list",
+                      "expression": "`list`"
+                    },
+                    {
+                      "name": "ratio",
+                      "expression": "SUM(`registered_per_resident`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "district",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "District"
+                },
+                "y": {
+                  "fieldName": "ratio",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Registered per resident"
+                },
+                "color": {
+                  "fieldName": "list",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "List"
+                }
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Registered per resident by district",
+                "showDescription": true,
+                "description": "The synthetic list inflates every area by 5%; real lists do not."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 3,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "scatter_new_housing",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "postcodes_since_census",
+                      "expression": "`postcodes_since_census`"
+                    },
+                    {
+                      "name": "nhs_per_resident",
+                      "expression": "`nhs_per_resident`"
+                    },
+                    {
+                      "name": "district",
+                      "expression": "`district`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "postcodes_since_census",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Postcodes introduced since Census day"
+                },
+                "y": {
+                  "fieldName": "nhs_per_resident",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Real registered per resident"
+                },
+                "color": {
+                  "fieldName": "district",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "District"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "New housing raises the real ratio (one dot per LSOA)",
+                "showDescription": true,
+                "description": "People in homes built after March 2021 are registered but were never counted by the Census."
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 7,
+            "width": 3,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "t_lsoa",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lsoa",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "lsoa21_name",
+                      "expression": "`lsoa21_name`"
+                    },
+                    {
+                      "name": "district",
+                      "expression": "`district`"
+                    },
+                    {
+                      "name": "residents",
+                      "expression": "`residents`"
+                    },
+                    {
+                      "name": "registered_synthetic",
+                      "expression": "`registered_synthetic`"
+                    },
+                    {
+                      "name": "registered_nhs",
+                      "expression": "`registered_nhs`"
+                    },
+                    {
+                      "name": "synthetic_per_resident",
+                      "expression": "`synthetic_per_resident`"
+                    },
+                    {
+                      "name": "nhs_per_resident",
+                      "expression": "`nhs_per_resident`"
+                    },
+                    {
+                      "name": "postcodes_since_census",
+                      "expression": "`postcodes_since_census`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "lsoa21_name",
+                    "displayName": "LSOA"
+                  },
+                  {
+                    "fieldName": "district",
+                    "displayName": "District"
+                  },
+                  {
+                    "fieldName": "residents",
+                    "displayName": "Residents"
+                  },
+                  {
+                    "fieldName": "registered_synthetic",
+                    "displayName": "Synthetic"
+                  },
+                  {
+                    "fieldName": "registered_nhs",
+                    "displayName": "Real"
+                  },
+                  {
+                    "fieldName": "synthetic_per_resident",
+                    "displayName": "Synthetic per resident"
+                  },
+                  {
+                    "fieldName": "nhs_per_resident",
+                    "displayName": "Real per resident"
+                  },
+                  {
+                    "fieldName": "postcodes_since_census",
+                    "displayName": "New postcodes"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "LSOAs, highest real ratio first"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 6,
+            "height": 9
+          }
+        }
+      ]
+    },
+    {
+      "name": "practices",
+      "displayName": "Practices",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "intro_practices",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Practice choice: synthetic vs real\n",
+                "Patients living in the study LSOAs, per GP practice. The synthetic model picks one of the three nearest practices by distance; real choice also follows practice size and purpose.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "scatter_practices",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "practice",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "registered_nhs",
+                      "expression": "`registered_nhs`"
+                    },
+                    {
+                      "name": "registered_synthetic",
+                      "expression": "`registered_synthetic`"
+                    },
+                    {
+                      "name": "practice_name",
+                      "expression": "`practice_name`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "registered_nhs",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Real patients"
+                },
+                "y": {
+                  "fieldName": "registered_synthetic",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Synthetic patients"
+                },
+                "label": {
+                  "fieldName": "practice_name",
+                  "displayName": "Practice"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "One dot per practice (on the diagonal = agreement)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "t_practice",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "practice",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "practice_name",
+                      "expression": "`practice_name`"
+                    },
+                    {
+                      "name": "registered_synthetic",
+                      "expression": "`registered_synthetic`"
+                    },
+                    {
+                      "name": "registered_nhs",
+                      "expression": "`registered_nhs`"
+                    },
+                    {
+                      "name": "synthetic_minus_real",
+                      "expression": "`synthetic_minus_real`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "practice_name",
+                    "displayName": "Practice"
+                  },
+                  {
+                    "fieldName": "registered_synthetic",
+                    "displayName": "Synthetic"
+                  },
+                  {
+                    "fieldName": "registered_nhs",
+                    "displayName": "Real"
+                  },
+                  {
+                    "fieldName": "synthetic_minus_real",
+                    "displayName": "Synthetic - real"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Largest gaps"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 9
+          }
+        }
+      ]
+    }
+  ]
+}

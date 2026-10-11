@@ -1,0 +1,12 @@
+# AI/BI dashboard on the gold layer, deployed with the bundle like the jobs (dashboards as code).
+# dataset_catalog / dataset_schema point the same dashboard at each target's gold schema, so its
+# queries name tables without a schema. Edit in the UI, then export back to the .lvdash.json file:
+#   databricks bundle generate dashboard --resource registered_vs_resident --force
+resources:
+  dashboards:
+    registered_vs_resident:
+      display_name: Registered vs resident (gbdemo)
+      file_path: ../dashboards/registered_vs_resident.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${resources.schemas.gold.name}
