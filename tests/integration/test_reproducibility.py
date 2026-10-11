@@ -29,9 +29,10 @@ def count_as_of(spark, table: str, version: int, where: str = "true") -> int:
 def test_all_versions_recorded(run_metrics):
     inputs = {k for k in run_metrics if k.startswith("input_version.")}
     outputs = {k for k in run_metrics if k.startswith("output_version.")}
-    assert "input_version.registrations" in inputs and len(inputs) >= 6
+    assert {"input_version.registrations", "input_version.gp_registered_lsoa"} <= inputs and len(inputs) >= 7
     assert outputs == {f"output_version.{t}" for t in (
-        "lsoa_registered_vs_resident", "msoa_registered_vs_resident", "practice_profile", "icb_summary")}
+        "lsoa_registered_vs_resident", "msoa_registered_vs_resident", "practice_profile", "icb_summary",
+        "lsoa_calibration", "practice_calibration")}
 
 
 def test_input_snapshot_reproduces_the_run(spark, run_metrics):

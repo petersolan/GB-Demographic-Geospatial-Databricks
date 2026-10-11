@@ -13,8 +13,9 @@ Everything else is real open data.
 
 ![Results site: registered per resident by LSOA](docs/images/results_site.png)
 
-*The results site (`site/`): synthetic GP registrations vs Census 2021 residents per LSOA for Exeter,
-East Devon, Mid Devon and Teignbridge. Every number is disclosure-controlled.*
+*The results site (`site/`), real view: GP registrations per Census 2021 resident for Exeter, East Devon,
+Mid Devon and Teignbridge, from NHS England's published counts; a switch shows the synthetic list on the
+same scale. Every number is disclosure-controlled.*
 
 ## What it demonstrates
 
@@ -28,9 +29,10 @@ East Devon, Mid Devon and Teignbridge. Every number is disclosure-controlled.*
 | Data quality + reconciliation | Flags per row, quarantine tables, rows-in = rows-out assertions after every join, metrics table per run, results measured against a ground truth |
 | Spark optimisation | Spatial join benchmark from 10k to 2.4M points with query-plan capture and a query-profile breakdown; liquid clustering on the large silver tables, measured at 109M rows; broadcast joins for lookups; idempotent per-version writes; repair runs |
 | Access, pseudonymisation, disclosure control | Unity Catalog grants in the bundle (analysts read gold only); column mask on raw NHS numbers; HMAC-SHA256 `patient_id` with the key in a secret scope; year of birth + age band only (data minimisation); counts 1-9 suppressed and others rounded to 5 |
-| Git, CI/CD, automated tests | GitHub Actions: ruff + 76 unit tests on open-source PySpark, then `bundle validate` on pull requests and `bundle deploy -t prod` from main; integration tests (spatial edge cases, reproducibility, catalog docs) run pytest inside a Databricks job |
+| Git, CI/CD, automated tests | GitHub Actions: ruff + 81 unit tests on open-source PySpark, then `bundle validate` on pull requests and `bundle deploy -t prod` from main; integration tests (spatial edge cases, reproducibility, catalog docs) run pytest inside a Databricks job |
 | Communication with analysts | Gold tables and columns described once in code, written to Unity Catalog comments and to a [data dictionary](docs/data_dictionary.md); a test keeps them in sync; findings below in plain language |
 | Census geographies | Outputs by LSOA, MSOA, ICB and GP practice |
+| NHS demographic data | The synthetic list calibrated against NHS England's *Patients Registered at a GP Practice* (patients by practice and LSOA 2021); the comparison found and fixed a generator bug |
 
 ## Architecture
 
@@ -62,6 +64,15 @@ Catalog Explorer.
 
 ## Findings
 
+- **Real registrations vary far more than any uniform assumption.** Against NHS England's published
+  counts, real list inflation over the study area is 1.071 (synthetic 1.044), and per LSOA it runs from
+  0.97 to 1.31 (5th to 95th percentile) where the synthetic list stays within 1.04-1.05. The extremes
+  are explainable: new housing built since the Census, and institutions whose residents are not on NHS
+  GP lists (see [Calibration](#calibration-against-real-nhs-registrations)).
+- **Calibration caught a bug the tests could not.** The synthetic generator chose among every active
+  ODS organisation, so minor injury units, HMP Exeter and pharmacies received 26% of registrations.
+  No unit test expected that; comparing with real practice lists made it obvious. The generator now
+  uses GP practices (ODS role RO76) only.
 - **The spatial check found errors in NHSPD a release before ONS fixed them.** For Devon postcodes,
   point-in-polygon and NHSPD's own LSOA assignment agree for 99.99%. All 7 disagreements in the August
   2025 release were changed by ONS in August 2026 to exactly the LSOA the spatial join had found.
@@ -80,6 +91,46 @@ Catalog Explorer.
 - **Real data is messier than rules.** NHSPD contains the historic Newport `NPT` postcode area and
   Girobank's `GIR 0AA`, both outside the usual postcode pattern, and 850 non-geographic postcodes with
   no location.
+
+## Calibration against real NHS registrations
+
+NHS England publishes *Patients Registered at a GP Practice* every quarter at LSOA 2021 level: patients
+per practice per LSOA of residence, from the GP Payments system (63.4 million patients in July 2026,
+103,890 of them with no usable LSOA). `gbdemo.calibration` compares it with the synthetic list and
+Census 2021 residents over the 296 study LSOAs; results are in `gold.lsoa_calibration` and
+`gold.practice_calibration`, protected like every gold table.
+
+| Study area (4 districts) | Synthetic | Real, NHS England July 2026 |
+|---|---|---|
+| Registered patients | 520,938 | 534,546 |
+| Registered per Census resident (499,118) | 1.044 | 1.071 |
+| Per LSOA, 5th to 95th percentile | 1.036 to 1.053 | 0.966 to 1.306 |
+| LSOAs with fewer registered than residents | 0 | 23% |
+| Exeter | 1.044 | 1.106 |
+
+What moves the real ratio, from the LSOAs at either end:
+
+- **New housing.** The 15 LSOAs with 10 or more postcodes introduced after Census day have a median
+  real ratio of 1.34, against 1.03 elsewhere; the highest (up to 2.23) are the new developments east of
+  Exeter. These people exist now but were not there to be counted in March 2021. Population growth and
+  list inflation can only be separated with newer population estimates.
+- **Institutions.** Low ratios match residents who are not on NHS GP lists: an LSOA covering Lympstone,
+  home of the Royal Marines' training centre (0.62; service personnel are registered with Defence
+  Medical Services), and one that likely covers HMP Channings Wood (0.72; prisoners get prison health
+  care). Student areas around the university appear at both ends: Census 2021 was taken during
+  lockdown, when many students were not at their term-time address.
+
+The practice side tests the generator's choice model (each person picks one of the three nearest
+practices, weighted by distance):
+
+- Before the fix, 26% of synthetic registrations went to organisations that hold no list. After it,
+  88.8% of real study-area patients are registered in a (home LSOA, practice) pair the model also
+  uses, up from 82.3%.
+- Practice list sizes correlate at 0.65 (59 practices with 500 or more patients on either side).
+  Distance alone underestimates large central practices (St Thomas Medical Group: 14,255 synthetic,
+  37,785 real) and overestimates special-purpose ones (Inclusion Health Devon, a service for people who
+  are homeless: 12,780 synthetic, 615 real). Weighting the choice by real list size would be the next
+  step.
 
 ## Performance
 
@@ -190,7 +241,9 @@ workspace it is set per target, e.g. `--var analysts_group=gbdemo_analysts`.
 
 ## Limitations
 
-- Synthetic list inflation is a uniform 5%, so area-to-area differences in the ratio are mostly noise.
+- Synthetic list inflation is a uniform 5%, so area-to-area differences in the synthetic ratio are
+  mostly noise; the real ratios show what it misses (see Calibration).
+- The synthetic practice choice uses distance only; real choice also follows practice size and purpose.
 - The synthetic population covers four districts: the 999 test range holds about 909,000 valid NHS numbers.
 - The spatial join runs on one ICB area by default (bundle variable `spatial_scope`) to stay within the
   Databricks Free Edition compute quota.
@@ -206,6 +259,7 @@ src/gbdemo/        pipeline logic as plain, unit-testable functions
   spatial.py         Databricks ST_* layer: boundaries, point-in-polygon, repair / simplify UDFs
   registrations.py   validation, quarantine, dedup, pseudonymisation, minimisation
   synthetic.py       reproducible synthetic registrations + ground truth
+  calibration.py     synthetic list vs NHS England published registrations
   lineage.py         inputs pinned to Delta versions; versions recorded for time travel
   clustering.py      liquid clustering (CLUSTER BY + OPTIMIZE)
   catalog_docs.py    gold table and column descriptions -> catalog comments + data dictionary
@@ -215,7 +269,7 @@ resources/         bundle resources: schemas + grants, volumes, pipeline, integr
 databricks.yml     bundle definition: wheel build, variables, dev / prod targets
 scripts/           download, prepare, upload, secret setup, fetch site data, data dictionary,
                    layout measurement, run tests
-tests/unit/        76 unit tests (Docker locally, GitHub Actions in CI)
+tests/unit/        81 unit tests (Docker locally, GitHub Actions in CI)
 tests/integration/ spatial, reproducibility and catalog-docs tests that run pytest inside a Databricks job
 docs/              data dictionary (generated), images
 site/              static results page (MapLibre) + protected data files, deployed to GitHub Pages
@@ -260,6 +314,8 @@ In Git Bash, prefix commands that take `/Volumes/...` paths with `MSYS_NO_PATHCO
 - **ONS:** NHS Postcode Directory (UK Full, Aug 2025 and Aug 2026), LSOA / MSOA 2021 and ICB
   boundaries, ICB names and codes. Open Government Licence v3.0.
 - **NHS England ODS:** GP practices (`epraccur`). Open Government Licence v3.0.
+- **NHS England:** Patients Registered at a GP Practice, July 2026 (practice totals and LSOA 2021 level).
+  Open Government Licence v3.0.
 - **Census 2021** residents per postcode, England and Wales, produced by the companion project
   [GB-Census-Population-Map](https://github.com/petersolan/GB-Census-Population-Map). Open Government Licence v3.0.
 - Contains public sector information licensed under the Open Government Licence v3.0.
