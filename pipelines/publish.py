@@ -44,7 +44,14 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     # 1. LSOAs in scope: protected values + simplified boundaries
-    lsoa = spark.table(layout.gold("lsoa_registered_vs_resident")).where("lad_code IS NOT NULL")
+    calibrated = spark.table(layout.gold("lsoa_calibration")).select(
+        "lsoa21_code", "registered_nhs", "nhs_per_resident", "postcodes_since_census"
+    )
+    lsoa = (
+        spark.table(layout.gold("lsoa_registered_vs_resident"))
+        .where("lad_code IS NOT NULL")
+        .join(calibrated, "lsoa21_code", "left")
+    )
     shapes = spark.table(layout.silver("lsoa21_geo")).select(
         F.col("code").alias("lsoa21_code"), F.expr("ST_AsBinary(geom)").alias("wkb")
     )
@@ -57,6 +64,9 @@ def main() -> None:
         "registered",
         "registered_per_resident",
         "any_suppressed",
+        "registered_nhs",  # real, NHS England (gold.lsoa_calibration)
+        "nhs_per_resident",
+        "postcodes_since_census",
     ]
     write_json(
         out / "lsoa.geojson",
@@ -85,7 +95,8 @@ def main() -> None:
             F.expr(f"ST_AsGeoJSON(ST_Transform({POINT_BNG}, 4326))").alias("geojson"),
         )
     )
-    prows = sizes.join(loc, "practice_code").collect()
+    real = spark.table(layout.gold("practice_calibration")).select("practice_code", "registered_nhs")
+    prows = sizes.join(loc, "practice_code").join(real, "practice_code", "left").collect()
     write_json(
         out / "practices.geojson",
         {
@@ -98,6 +109,7 @@ def main() -> None:
                         "practice_code": r.practice_code,
                         "practice_name": r.practice_name,
                         "list_size": r.list_size,
+                        "registered_nhs_study_area": r.registered_nhs,  # real patients from the study LSOAs
                     },
                 }
                 for r in prows
