@@ -29,6 +29,9 @@ DEFAULT_RATES = {  # share of registrations given each defect (cumulative bands,
 }
 LIST_INFLATION = 0.05  # ghost registrations: people registered but no longer resident
 DUPLICATE_RATE = 0.003  # people registered twice (second practice)
+# ODS lists every prescribing organisation; only role RO76 holds a registered list. Minor injury units,
+# prisons, pharmacies and walk-in centres are also ACTIVE in epraccur but nobody registers there.
+GP_PRACTICE_SETTING = "RO76"
 
 
 def stable_uniform(*cols: Column, salt: str = SALT) -> Column:
@@ -54,8 +57,12 @@ def residents_in_scope(census: DataFrame, postcodes: DataFrame, lad_codes: list[
 
 
 def nearest_practices(residents: DataFrame, practices: DataFrame, k: int = 3) -> DataFrame:
-    """For each postcode, the k nearest active practices with inverse-distance weights (BNG metres)."""
-    pr = practices.where((F.col("status") == "ACTIVE") & F.col("easting").isNotNull()).select(
+    """For each postcode, the k nearest active GP practices with inverse-distance weights (BNG metres)."""
+    pr = practices.where(
+        (F.col("status") == "ACTIVE")
+        & (F.col("prescribing_setting") == GP_PRACTICE_SETTING)
+        & F.col("easting").isNotNull()
+    ).select(
         "practice_code", F.col("easting").alias("pe"), F.col("northing").alias("pn")
     )
     pairs = (

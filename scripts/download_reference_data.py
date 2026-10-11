@@ -54,6 +54,15 @@ SOURCES = [
     ("census_postcode_population", "2021", "local", CENSUS_POSTCODE_POPULATION,
      "postcode_population_2021.parquet",
      "Census 2021 usual residents per postcode, England & Wales (from GB-Census-Population-Map)"),
+    # Real registered-patient counts (NHS England, GP Payments system), to calibrate the synthetic list.
+    # LSOA level is published only in the quarterly editions (Jan / Apr / Jul / Oct).
+    ("gp_registered_practice", "2026-07", "url",
+     "https://files.digital.nhs.uk/0C/C6EF77/gp-reg-pat-prac-all.zip", "gp-reg-pat-prac-all.zip",
+     "Patients Registered at a GP Practice, July 2026: totals per practice"),
+    ("gp_registered_lsoa", "2026-07", "url",
+     "https://files.digital.nhs.uk/93/C90730/gp-reg-pat-prac-lsoa-male-female-July-26.zip",
+     "gp-reg-pat-prac-lsoa-male-female-July-26.zip",
+     "Patients Registered at a GP Practice, July 2026: patients per practice and LSOA 2021"),
     # ODS publishes only the current list: our dated snapshots ARE the version history
     ("ods_epraccur", dt.date.today().isoformat(), "url", ODS_EPRACCUR, "epraccur.csv",
      "ODS GP practices (epraccur), current snapshot on download date; no header row"),

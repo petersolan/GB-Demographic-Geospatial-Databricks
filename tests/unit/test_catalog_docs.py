@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from gbdemo import catalog_docs, gold
+from pyspark.sql import functions as F
+
+from gbdemo import calibration, catalog_docs, gold
 
 ADDED_ON_SAVE = ["nhspd_release", "_run_id"]  # pipelines/gold_aggregate.py adds these
 
@@ -25,6 +27,10 @@ def gold_outputs(spark):
     )
     res_icb = spark.createDataFrame([("I", 20)], "icb_gss string, residents int")
     icb_names = spark.createDataFrame([("I", "NHS X")], "icb_gss string, icb_name string")
+    nhs = spark.createDataFrame([("P1", "A", 25)], "practice_code string, lsoa21_code string, patients long")
+    new_pcs = spark.createDataFrame([("A", 0)], "lsoa21_code string, postcodes_since_census long")
+    cal_practices = practices.withColumn("prescribing_setting", F.lit("RO76"))
+    extract = F.lit("2026-07")  # pipelines/gold_aggregate.py adds the extract before saving
     return {
         "lsoa_registered_vs_resident": gold.lsoa_registered_vs_resident(
             gold.residents_by_lsoa(census, pcs, ["E07000041"]), gold.registered_by_lsoa(regs),
@@ -34,6 +40,13 @@ def gold_outputs(spark):
             gold.registered_by_area(regs, "msoa21_code"), names("msoa21_code", "msoa21_name")),
         "practice_profile": gold.practice_profile(regs, practices),
         "icb_summary": gold.icb_summary(regs, res_icb, icb_names),
+        "lsoa_calibration": calibration.lsoa_calibration(
+            gold.residents_by_lsoa(census, pcs, ["E07000041"]), gold.registered_by_lsoa(regs),
+            calibration.nhs_registered_by_lsoa(nhs), new_pcs, names("lsoa21_code", "lsoa21_name"),
+        ).withColumn("nhs_extract", extract),
+        "practice_calibration": calibration.practice_calibration(
+            regs, nhs, pcs.select("lsoa21_code"), cal_practices
+        ).withColumn("nhs_extract", extract),
     }
 
 

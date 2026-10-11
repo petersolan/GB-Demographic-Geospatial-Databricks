@@ -14,6 +14,11 @@ from gbdemo.runtime import check_schema, get_spark, parse_args, parse_layout
 from gbdemo.schemas import EPRACCUR_FIELDS, NHSPD_FIELDS
 
 NHSPD_MEMBER = re.compile(r"^Data/nhg\d{2}[a-z]{3}\.csv$")  # national file, e.g. Data/nhg26aug.csv
+# NHS England "Patients Registered at a GP Practice": the all-persons file inside each zip
+GP_REGISTERED = {
+    "gp_registered_practice": (re.compile(r"^gp-reg-pat-prac-all\.csv$"), "gp_registered_practice"),
+    "gp_registered_lsoa": (re.compile(r"^gp-reg-pat-prac-lsoa-all\.csv$"), "gp_registered_lsoa"),
+}
 BOUNDARY_TABLES = {
     "lsoa21_bfc": "lsoa21_boundary",
     "msoa21_bfc": "msoa21_boundary",
@@ -21,11 +26,11 @@ BOUNDARY_TABLES = {
 }
 
 
-def extract_nhspd(zip_path: Path) -> Path:
-    """Unzip the national NHSPD CSV next to the zip, once. Zips aren't splittable; CSVs are."""
-    out = zip_path.parent / "extracted" / "nhspd.csv"
+def extract_member(zip_path: Path, member_re: re.Pattern, out_name: str) -> Path:
+    """Unzip one CSV next to the zip, once. Zips aren't splittable; CSVs are."""
+    out = zip_path.parent / "extracted" / out_name
     with zipfile.ZipFile(zip_path) as z:
-        member = next(m for m in z.infolist() if NHSPD_MEMBER.match(m.filename))
+        member = next(m for m in z.infolist() if member_re.match(m.filename))
         if out.exists() and out.stat().st_size == member.file_size:
             print(f"  already extracted: {out}")
             return out
@@ -58,7 +63,7 @@ def main() -> None:
         ds, ver = meta["dataset"], meta["version"]
         path = landing / key
         if ds == "nhspd":
-            csv = extract_nhspd(path)
+            csv = extract_member(path, NHSPD_MEMBER, "nhspd.csv")
             load(bronze.read_headerless_csv(spark, str(csv), NHSPD_FIELDS), ds, ver, "nhspd", meta["sha256"])
         elif ds == "ods_epraccur":
             df = bronze.read_headerless_csv(spark, str(path), EPRACCUR_FIELDS)
@@ -68,6 +73,10 @@ def main() -> None:
             load(df, ds, ver, "census_postcode_population", meta["sha256"])
         elif ds == "icb_codes":
             load(bronze.read_headed_csv(spark, str(path)), ds, ver, "icb_codes", meta["sha256"])
+        elif ds in GP_REGISTERED:
+            member_re, table = GP_REGISTERED[ds]
+            csv = extract_member(path, member_re, f"{table}.csv")
+            load(bronze.read_headed_csv(spark, str(csv)), ds, ver, table, meta["sha256"])
         elif ds in BOUNDARY_TABLES:
             # boundaries arrive as GeoParquet made from the downloaded GeoPackage (same geometry)
             parquet = landing / Path(prepared[key]["output"]).relative_to("data/prepared")

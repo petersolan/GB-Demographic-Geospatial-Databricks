@@ -9,7 +9,7 @@ from gbdemo.reconcile import ReconciliationError
 EXETER, ELSEWHERE = "E07000041", "E07000045"
 PC_COLS = ("nhspd_release string, postcode string, easting int, northing int, grid_quality int, "
            "lad_code string, lsoa21_code string, is_live boolean")
-PRACTICE_COLS = "practice_code string, status string, easting int, northing int"
+PRACTICE_COLS = "practice_code string, status string, prescribing_setting string, easting int, northing int"
 RATES = {k: 0.08 for k in synthetic.DEFAULT_RATES}   # high rates so every defect appears
 
 
@@ -27,8 +27,10 @@ def inputs(spark):
         ("2026-08", "EX2 4AA", 291400, 91700, 1, EXETER, "E01020000", False),  # terminated, same sector
     ], PC_COLS)
     practices = spark.createDataFrame([
-        ("L1", "ACTIVE", 292000, 92500), ("L2", "ACTIVE", 291600, 91900), ("L3", "ACTIVE", 295000, 95000),
-        ("L4", "ACTIVE", 300000, 99000), ("L5", "INACTIVE", 292050, 92510),   # nearest but closed
+        ("L1", "ACTIVE", "RO76", 292000, 92500), ("L2", "ACTIVE", "RO76", 291600, 91900),
+        ("L3", "ACTIVE", "RO76", 295000, 95000), ("L4", "ACTIVE", "RO76", 300000, 99000),
+        ("L5", "INACTIVE", "RO76", 292050, 92510),   # nearest but closed
+        ("Y1", "ACTIVE", "RO72", 292055, 92515),     # nearest of all, but a minor injury unit: no list
     ], PRACTICE_COLS)
     return census, postcodes, practices
 
@@ -56,7 +58,7 @@ def test_scope_numbers_and_practices(spark, inputs):
     assert any(r.is_ghost for r in people)
     assert len({r.nhs_number for r in people}) == len(people)               # unique per person
     assert all(r.nhs_number.startswith("999") and nhs.is_valid(r.nhs_number) for r in t)
-    assert {r.practice_code for r in regs.collect()} <= {"L1", "L2", "L3"}   # 3 nearest ACTIVE only
+    assert {r.practice_code for r in regs.collect()} <= {"L1", "L2", "L3"}   # 3 nearest open GP practices
 
 
 def test_defects_do_what_they_say(spark, inputs):

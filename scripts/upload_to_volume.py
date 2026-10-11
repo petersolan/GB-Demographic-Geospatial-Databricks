@@ -15,7 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LANDING = ROOT / "data" / "landing"
 PREPARED = ROOT / "data" / "prepared"
-RAW_AS_RECEIVED = ("nhspd", "ods_epraccur", "icb_codes", "census_postcode_population")
+RAW_AS_RECEIVED = ("nhspd", "ods_epraccur", "icb_codes", "census_postcode_population",
+                   "gp_registered_practice", "gp_registered_lsoa")
 CLI = os.environ.get("DATABRICKS_CLI", "databricks")
 
 

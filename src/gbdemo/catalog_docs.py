@@ -74,6 +74,43 @@ GOLD: dict[str, tuple[str, dict[str, str]]] = {
             **LINEAGE,
         },
     ),
+    "lsoa_calibration": (
+        "Calibration per LSOA in the study districts: Census 2021 residents, synthetic registered "
+        "patients and real registered patients from NHS England's published 'Patients Registered at a "
+        "GP Practice' (patients by LSOA of residence, all practices). The real ratio also carries "
+        f"population change since the Census; see postcodes_since_census. {PROTECTED}",
+        {
+            "lsoa21_code": "LSOA 2021 GSS code.",
+            "lsoa21_name": "LSOA 2021 name.",
+            "lad_code": "Local authority district (GSS code).",
+            "residents": f"Census 2021 usual residents. {PROTECTED}",
+            "registered_synthetic": f"Registered patients in the synthetic list. {PROTECTED}",
+            "registered_nhs": f"Real registered patients living in the LSOA (NHS England). {PROTECTED}",
+            "synthetic_per_resident": RATIO,
+            "nhs_per_resident": RATIO,
+            "postcodes_since_census": "Postcodes in the LSOA introduced after Census day (21 March 2021), "
+                                      "a sign of new housing the Census could not count.",
+            "any_suppressed": "True if any of the three counts was suppressed in this row.",
+            "nhs_extract": "NHS England extract used (YYYY-MM).",
+            **LINEAGE,
+        },
+    ),
+    "practice_calibration": (
+        "Calibration per practice: patients living in the study LSOAs, synthetic vs real (NHS England). "
+        "Tests the synthetic nearest-practice choice. Includes practices only one side uses. "
+        f"{PROTECTED}",
+        {
+            "practice_code": "ODS code.",
+            "practice_name": "Name from ODS (epraccur); null if not in the snapshot.",
+            "prescribing_setting": "ODS prescribing setting; RO76 = GP practice. Other settings (minor "
+                                   "injury units, prisons, pharmacies) hold no registered list.",
+            "registered_synthetic": f"Synthetic registered patients from the study LSOAs. {PROTECTED}",
+            "registered_nhs": f"Real registered patients from the study LSOAs. {PROTECTED}",
+            "any_suppressed": "True if either count was suppressed in this row.",
+            "nhs_extract": "NHS England extract used (YYYY-MM).",
+            **LINEAGE,
+        },
+    ),
 }
 
 

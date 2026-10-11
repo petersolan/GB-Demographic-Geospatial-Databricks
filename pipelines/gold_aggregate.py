@@ -1,8 +1,10 @@
 """Job step: disclosure-controlled aggregates (gold).
 
 Writes gold.lsoa_registered_vs_resident, gold.msoa_registered_vs_resident, gold.practice_profile
-and gold.icb_summary. Only protected values are written (small counts suppressed, others rounded
-to 5), so gold is safe to share; exact counts stay in the restricted silver layer.
+and gold.icb_summary, plus gold.lsoa_calibration and gold.practice_calibration (the synthetic list
+against NHS England's published registrations, gbdemo.calibration). Only protected values are
+written (small counts suppressed, others rounded to 5), so gold is safe to share; exact counts stay
+in the restricted silver layer.
 
 Reproducible: every input is read pinned to its current Delta version, and the input and output
 versions are recorded with the run's metrics (gbdemo.lineage). Each table gets its catalog
@@ -11,7 +13,7 @@ comments from gbdemo.catalog_docs, the same text as docs/data_dictionary.md.
 
 from pyspark.sql import functions as F
 
-from gbdemo import catalog_docs, disclosure, gold, lineage, reconcile
+from gbdemo import calibration, catalog_docs, disclosure, gold, lineage, reconcile
 from gbdemo.runtime import check_schema, get_spark, parse_args, parse_layout
 
 
@@ -82,6 +84,46 @@ def main() -> None:
         .agg(F.sum("residents").alias("residents"))
     )
     icb = save(gold.icb_summary(regs, residents_icb, icb_names), "icb_summary")
+
+    # calibration against real NHS registrations (latest extract), over the same study LSOAs
+    nhs_raw = pinned.read(layout.bronze("gp_registered_lsoa"), "gp_registered_lsoa")
+    extract = nhs_raw.agg(F.max("_version")).first()[0]
+    nhs_raw = nhs_raw.where(F.col("_version") == extract)
+    nhs_patients = calibration.nhs_lsoa_patients(nhs_raw)
+    study = residents.select("lsoa21_code").distinct()
+    lsoa_cal = save(
+        calibration.lsoa_calibration(
+            residents,
+            gold.registered_by_lsoa(regs),
+            calibration.nhs_registered_by_lsoa(nhs_patients),
+            calibration.postcodes_since_census(postcodes),
+            lsoa_names,
+        ).withColumn("nhs_extract", F.lit(extract)),
+        "lsoa_calibration",
+    )
+    practice_cal = save(
+        calibration.practice_calibration(
+            regs, nhs_patients, study, practices.where(F.col("ods_snapshot") == snapshot)
+        ).withColumn("nhs_extract", F.lit(extract)),
+        "practice_calibration",
+    )
+    nhs_total = nhs_raw.agg(F.sum(F.col("number_of_patients").cast("long"))).first()[0]
+    log(
+        "gold_calibration",
+        extract,
+        {
+            "nhs_patients_total": nhs_total,
+            "nhs_patients_without_lsoa": nhs_total - nhs_patients.agg(F.sum("patients")).first()[0],
+            "nhs_registered_study_area": (
+                nhs_patients.join(study, "lsoa21_code").agg(F.sum("patients")).first()[0]
+            ),
+            "synthetic_registered_study_area": regs.join(study, "lsoa21_code").count(),
+            # share of real study-area patients in an (LSOA, practice) pair the model also uses
+            "overlap_share_bp": int(calibration.overlap_share(regs, nhs_patients, study) * 10_000),
+            "lsoa_rows": lsoa_cal.count(),
+            "practice_rows": practice_cal.count(),
+        },
+    )
 
     in_scope = regs.where(F.col("lad_code").isin(lads)).count()
     total = regs.count()
