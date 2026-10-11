@@ -250,7 +250,9 @@ After changing `catalog_docs.py`: `python scripts/make_data_dictionary.py`.
 
 CD: add `DATABRICKS_HOST` and `DATABRICKS_TOKEN` as repository secrets and every push to main that
 passes lint and tests deploys the bundle's `prod` target (pull requests only validate it). Without the
-secrets the deploy job is skipped.
+secrets the deploy job is skipped. CD is live on this repo: `prod` holds the deployed jobs and empty
+schemas, while the published results come from runs of the `dev` target (Free Edition quota is too
+small to run both).
 In Git Bash, prefix commands that take `/Volumes/...` paths with `MSYS_NO_PATHCONV=1`.
 
 ## Data and licences
