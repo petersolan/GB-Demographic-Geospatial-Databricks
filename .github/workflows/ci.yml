@@ -9,26 +9,26 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install ruff
       - run: ruff check .
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-dev.txt
       # Spark runs on the JVM: same Java 17 as the local Docker image
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -37,7 +37,7 @@ jobs:
 
   bundle:
     needs: [lint, unit-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # one deployment at a time; a newer push waits rather than racing an older one
     concurrency:
       group: bundle-${{ github.ref }}
@@ -51,9 +51,9 @@ jobs:
       - if: env.DATABRICKS_TOKEN == ''
         run: echo "::notice::DATABRICKS_HOST / DATABRICKS_TOKEN not set, skipping bundle validate and deploy"
       - if: env.DATABRICKS_TOKEN != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - if: env.DATABRICKS_TOKEN != ''
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - if: env.DATABRICKS_TOKEN != ''
