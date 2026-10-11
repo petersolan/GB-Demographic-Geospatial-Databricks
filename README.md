@@ -255,8 +255,9 @@ workspace it is set per target, e.g. `--var analysts_group=gbdemo_analysts`.
 
 ## Limitations
 
-- Synthetic list inflation is a uniform 5%, so area-to-area differences in the synthetic ratio are
-  mostly noise; the real ratios show what it misses (see Calibration).
+- Synthetic list inflation is uniform (5% ghost registrations, 4.4% net after cleaning), so
+  area-to-area differences in the synthetic ratio are mostly noise; the real ratios show what it
+  misses (see Calibration).
 - The synthetic practice choice uses distance only; real choice also follows practice size and purpose.
 - The synthetic population covers four districts: the 999 test range holds about 909,000 valid NHS numbers.
 - The spatial join runs on one ICB area by default (bundle variable `spatial_scope`) to stay within the

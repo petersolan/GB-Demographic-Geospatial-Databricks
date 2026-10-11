@@ -151,7 +151,7 @@ code { font-family: var(--mono); font-size: 12px; }
     <p class="note">NHSPD ${summary.nhspd_release}, ODS practices ${summary.ods_snapshot}, LSOA 2021 boundaries
     (simplified to 10 m for the web). Disclosure control: counts 1-${summary.disclosure.suppress_below - 1}
     suppressed, others rounded to the nearest ${summary.disclosure.round_to}; ratios use exact counts and are
-    suppressed with them. Synthetic list inflation is uniform (5%) by design. The real ratios use NHS
+    suppressed with them. Synthetic list inflation is uniform by design (5% ghost registrations, 4.4% after cleaning). The real ratios use NHS
     England's Patients Registered at a GP Practice (extract ${extract ?? "–"}, patients by LSOA of residence)
     and also carry population change since the Census, such as new housing. Contains public sector information licensed under the Open Government Licence v3.0.
     Basemap © OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors. Run <code>${summary.run_id}</code>.</p>`;
@@ -170,7 +170,7 @@ code { font-family: var(--mono); font-size: 12px; }
     map.addSource("lsoa", { type: "geojson", data: lsoa });
     const VIEWS = {
       synthetic: { ratio: "registered_per_resident", size: "list_size",
-                   note: "Synthetic list: 5% inflation everywhere. Circles: GP practices, sized by synthetic list size." },
+                   note: "Synthetic list: the same inflation everywhere (4.4% after cleaning). Circles: GP practices, sized by synthetic list size." },
       nhs: { ratio: "nhs_per_resident", size: "registered_nhs_study_area",
              note: "Real registrations: new housing since the Census, students and institutions move the ratio " +
                    "far from 1. Circles: real patients from these LSOAs at each practice." },

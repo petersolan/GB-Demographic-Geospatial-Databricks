@@ -421,7 +421,7 @@
                 "showTitle": true,
                 "title": "List inflation by district: % more registered than residents",
                 "showDescription": true,
-                "description": "Synthetic: about 4% everywhere by design. Real: from about 5% in East Devon to about 11% in Exeter."
+                "description": "Synthetic: 4.4% everywhere by design (5% ghost registrations, less after cleaning). Real: from about 5% in East Devon to about 11% in Exeter."
               }
             }
           },
