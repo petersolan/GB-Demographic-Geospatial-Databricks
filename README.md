@@ -26,7 +26,7 @@ East Devon, Mid Devon and Teignbridge. Every number is disclosure-controlled.*
 | CRS + geometry validation | BNG (EPSG:27700) throughout, WGS84 only for the web; `ST_IsValid`, Shapely repair UDF (no `ST_MakeValid` in Databricks); WKT / WKB / GeoJSON / GeoParquet |
 | Versioned lookups and boundaries | ICB code and boundary editions as SCD2 (`valid_from` / `valid_to`); each NHSPD release joined to the edition in force; gold reads every input pinned to a Delta version and records input and output versions, so any run can be rebuilt with time travel (tested) |
 | Data quality + reconciliation | Flags per row, quarantine tables, rows-in = rows-out assertions after every join, metrics table per run, results measured against a ground truth |
-| Spark optimisation | Spatial join benchmark from 10k to 2.4M points with query-plan capture; liquid clustering on the large silver tables, measured at 109M rows; broadcast joins for lookups; idempotent per-version writes; repair runs |
+| Spark optimisation | Spatial join benchmark from 10k to 2.4M points with query-plan capture and a query-profile breakdown; liquid clustering on the large silver tables, measured at 109M rows; broadcast joins for lookups; idempotent per-version writes; repair runs |
 | Access, pseudonymisation, disclosure control | Unity Catalog grants in the bundle (analysts read gold only); column mask on raw NHS numbers; HMAC-SHA256 `patient_id` with the key in a secret scope; year of birth + age band only (data minimisation); counts 1-9 suppressed and others rounded to 5 |
 | Git, CI/CD, automated tests | GitHub Actions: ruff + 76 unit tests on open-source PySpark, then `bundle validate` on pull requests and `bundle deploy -t prod` from main; integration tests (spatial edge cases, reproducibility, catalog docs) run pytest inside a Databricks job |
 | Communication with analysts | Gold tables and columns described once in code, written to Unity Catalog comments and to a [data dictionary](docs/data_dictionary.md); a test keeps them in sync; findings below in plain language |
@@ -97,6 +97,38 @@ bounding-box pre-filter followed by `ST_Covers`.
 plan shows Databricks' native spatial join (Photon) partitions space and filters internally for both
 forms. The hand-written optimisation was measured, found redundant on this engine, and would only
 pay off on an engine without a spatial join operator.
+
+### Reading the query profile
+
+To see where the time goes, the national `ST_Covers` join was run once on the SQL warehouse
+(Serverless Starter, 2X-Small, cold) and its query profile read in the UI. Wall time was 30 s: 4 s
+waking the warehouse, 10.7 s compilation and 15.5 s execution spread over 24 tasks. The profile
+reports task time summed over parallel tasks:
+
+| Operator | Task time | Rows | What it does |
+|---|---|---|---|
+| Inner join (`ST_Covers`) | 17.8 s | 2.41 M out | exact point-in-polygon test inside each bin |
+| Sampling scan, `lsoa21_geo` | 16.4 s | 35.67 K → 3.45 K | measures geometry extents to choose the bin size |
+| Shuffle on `binId`, polygon side | 6.0 s | 50.34 K | moves polygon copies, each with its full boundary |
+| Sampling scan, `postcode` | 5.3 s | 2.41 M → 241.88 K | the same for points |
+| Main scan, `lsoa21_geo` | 1.1 s | 35.67 K | |
+| Bin generator | 0.13 s | 35.67 K → 50.34 K | assigns each geometry to its x-axis bins |
+
+These add up to the query's 47.6 s of Photon time. Three things stand out:
+
+- **Binning copies polygons.** 41% more polygon rows leave the bin generator than enter it: a
+  polygon that crosses a bin edge goes to every bin it touches. Points never cross, so they stay at
+  2.41 M, and the join removes the duplicate matches this could create (2,413,459, the same count
+  as the benchmark).
+- **The exact test is the largest single cost**, not reading or binning. That is why the manual
+  bounding-box filter gained nothing: bins already discard distant polygons, and what remains is
+  testing points against detailed LSOA boundaries (31.9 M vertices in total). The usual next step
+  would be to split large polygons into smaller pieces, which tightens bins and makes each test
+  cheaper.
+- **Choosing the bin size is not free.** Sampling both inputs took almost as long as the join. The
+  polygon sample scan (16.4 s) cost far more than the main polygon scan (1.1 s), most likely because
+  it was the first read of the geometry column on a cold warehouse (half the bytes came from cloud
+  storage, half from cache).
 
 ### Table layout: liquid clustering
 
