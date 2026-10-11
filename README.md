@@ -30,7 +30,7 @@ same scale. Every number is disclosure-controlled.*
 | Spark optimisation | Spatial join benchmark from 10k to 2.4M points with query-plan capture and a query-profile breakdown; liquid clustering on the large silver tables, measured at 109M rows; broadcast joins for lookups; idempotent per-version writes; repair runs |
 | Access, pseudonymisation, disclosure control | Unity Catalog grants in the bundle (analysts read gold only); column mask on raw NHS numbers; HMAC-SHA256 `patient_id` with the key in a secret scope; year of birth + age band only (data minimisation); counts 1-9 suppressed and others rounded to 5 |
 | Git, CI/CD, automated tests | GitHub Actions: ruff + 81 unit tests on open-source PySpark, then `bundle validate` on pull requests and `bundle deploy -t prod` from main; integration tests (spatial edge cases, reproducibility, catalog docs) run pytest inside a Databricks job |
-| Communication with analysts | Gold tables and columns described once in code, written to Unity Catalog comments and to a [data dictionary](docs/data_dictionary.md); a test keeps them in sync; findings below in plain language |
+| Communication with analysts | Gold tables and columns described once in code, written to Unity Catalog comments and to a [data dictionary](docs/data_dictionary.md); a test keeps them in sync; an [AI/BI dashboard](#dashboard) on gold, deployed as code; findings below in plain language |
 | Census geographies | Outputs by LSOA, MSOA, ICB and GP practice |
 | NHS demographic data | The synthetic list calibrated against NHS England's *Patients Registered at a GP Practice* (patients by practice and LSOA 2021); the comparison found and fixed a generator bug |
 
@@ -131,6 +131,20 @@ practices, weighted by distance):
   37,785 real) and overestimates special-purpose ones (Inclusion Health Devon, a service for people who
   are homeless: 12,780 synthetic, 615 real). Weighting the choice by real list size would be the next
   step.
+
+## Dashboard
+
+![AI/BI dashboard on the gold layer](docs/images/dashboard.png)
+
+An AI/BI dashboard for analysts (`dashboards/registered_vs_resident.lvdash.json`), deployed by the
+bundle like the jobs (`resources/dashboard.yml`), so CI/CD ships it to each target. It reads only gold
+tables: `dataset_catalog` / `dataset_schema` point the same queries at the target's gold schema, so the
+SQL names no schema. Page one compares synthetic and real registrations per resident (counters, list
+inflation by district, new housing against the real ratio, and an LSOA table, with a district filter);
+page two compares practice list sizes. Edit it in the UI, then export it back to the file with
+`databricks bundle generate dashboard --resource registered_vs_resident --force`. On Free Edition it
+is visible only inside the workspace; the static [results site](https://petersolan.github.io/GB-Demographic-Geospatial-Databricks/)
+is the public view. In `prod` it deploys with the jobs but shows data only once the pipeline has run there.
 
 ## Performance
 
@@ -265,7 +279,8 @@ src/gbdemo/        pipeline logic as plain, unit-testable functions
   catalog_docs.py    gold table and column descriptions -> catalog comments + data dictionary
   gold.py, disclosure.py, reconcile.py, versioning.py, postcodes.py, nhs_number.py
 pipelines/         thin job entry points (one per task)
-resources/         bundle resources: schemas + grants, volumes, pipeline, integration-test and benchmark jobs
+resources/         bundle resources: schemas + grants, volumes, pipeline, integration-test and benchmark jobs, dashboard
+dashboards/        AI/BI dashboard definition (.lvdash.json)
 databricks.yml     bundle definition: wheel build, variables, dev / prod targets
 scripts/           download, prepare, upload, secret setup, fetch site data, data dictionary,
                    layout measurement, run tests

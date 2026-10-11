@@ -21,9 +21,9 @@
         "         SUM(registered_synthetic) AS synthetic, SUM(registered_nhs) AS nhs\n",
         "  FROM lsoa_calibration GROUP BY 1\n",
         ")\n",
-        "SELECT district, 'Synthetic' AS list, ROUND(synthetic / residents, 3) AS registered_per_resident FROM d\n",
+        "SELECT district, 'Synthetic' AS list, ROUND(100 * (synthetic / residents - 1), 1) AS pct_above_residents FROM d\n",
         "UNION ALL\n",
-        "SELECT district, 'Real (NHS England)' AS list, ROUND(nhs / residents, 3) FROM d\n"
+        "SELECT district, 'Real (NHS England)' AS list, ROUND(100 * (nhs / residents - 1), 1) FROM d\n"
       ]
     },
     {
@@ -381,8 +381,8 @@
                       "expression": "`list`"
                     },
                     {
-                      "name": "ratio",
-                      "expression": "SUM(`registered_per_resident`)"
+                      "name": "pct",
+                      "expression": "SUM(`pct_above_residents`)"
                     }
                   ]
                 }
@@ -400,11 +400,11 @@
                   "displayName": "District"
                 },
                 "y": {
-                  "fieldName": "ratio",
+                  "fieldName": "pct",
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Registered per resident"
+                  "displayName": "% more registered than residents"
                 },
                 "color": {
                   "fieldName": "list",
@@ -419,9 +419,9 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Registered per resident by district",
+                "title": "List inflation by district: % more registered than residents",
                 "showDescription": true,
-                "description": "The synthetic list inflates every area by 5%; real lists do not."
+                "description": "Synthetic: about 4% everywhere by design. Real: from about 5% in East Devon to about 11% in Exeter."
               }
             }
           },
