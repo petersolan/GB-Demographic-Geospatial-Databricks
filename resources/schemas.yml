@@ -28,6 +28,13 @@ resources:
       volume_type: MANAGED
       comment: Files uploaded from local downloads (Free Edition has no general outbound internet).
 
+    checkpoints:
+      name: checkpoints
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.bronze.name}
+      volume_type: MANAGED
+      comment: Stream checkpoints (Auto Loader file tracking, Delta stream offsets). Pipeline only.
+
     exports:
       name: exports
       catalog_name: ${var.catalog}

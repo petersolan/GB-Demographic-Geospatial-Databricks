@@ -16,6 +16,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--spatial-scope", default="all")
     # synthetic_registrations: comma-separated LAD codes to generate patients for
     p.add_argument("--synthetic-lads", default="E07000041")
+    # incremental updates: the month of update files to generate (YYYY-MM)
+    p.add_argument("--month", default="")
     a, _ = p.parse_known_args(argv)
     return a
 

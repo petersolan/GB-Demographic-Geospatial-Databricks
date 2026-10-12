@@ -1,0 +1,56 @@
+# Incremental registration updates, run once per monthly file:
+#   generate (as if received from GP systems) -> bronze (Auto Loader) -> silver (stream + MERGE, SCD2)
+# Run month by month, e.g.  databricks bundle run gbdemo_incremental --params month=2026-08
+# Rerunning a month is safe: Auto Loader skips files it has seen, and applied events are skipped.
+resources:
+  jobs:
+    gbdemo_incremental:
+      name: gbdemo_incremental
+      max_concurrent_runs: 1
+      parameters:
+        - name: month
+          default: "2026-07"
+      tasks:
+        - task_key: generate_updates
+          max_retries: 0
+          environment_key: default
+          spark_python_task:
+            python_file: ../pipelines/generate_updates.py
+            parameters: &args
+              - --catalog
+              - ${var.catalog}
+              - --bronze-schema
+              - ${resources.schemas.bronze.name}
+              - --silver-schema
+              - ${resources.schemas.silver.name}
+              - --gold-schema
+              - ${resources.schemas.gold.name}
+              - --run-id
+              - "{{job.run_id}}"
+              - --synthetic-lads
+              - ${var.synthetic_lads}
+              - --month
+              - "{{job.parameters.month}}"
+
+        - task_key: bronze_updates
+          max_retries: 0
+          depends_on: [{ task_key: generate_updates }]
+          environment_key: default
+          spark_python_task:
+            python_file: ../pipelines/bronze_updates.py
+            parameters: *args
+
+        - task_key: silver_updates
+          max_retries: 0
+          depends_on: [{ task_key: bronze_updates }]
+          environment_key: default
+          spark_python_task:
+            python_file: ../pipelines/silver_updates.py
+            parameters: *args
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+            dependencies:
+              - ../dist/*.whl

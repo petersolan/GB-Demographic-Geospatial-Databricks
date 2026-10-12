@@ -16,6 +16,7 @@ class Layout:
     gold_schema: str
     landing_volume: str = "landing"
     exports_volume: str = "exports"
+    checkpoints_volume: str = "checkpoints"
 
     def bronze(self, table: str) -> str:
         return f"{self.catalog}.{self.bronze_schema}.{table}"
@@ -34,3 +35,7 @@ class Layout:
     def exports_path(self) -> str:
         """Files meant to leave the platform: gold schema only, never beside raw data."""
         return f"/Volumes/{self.catalog}/{self.gold_schema}/{self.exports_volume}"
+
+    def checkpoint_path(self, stream: str) -> str:
+        """Where a stream records what it has processed (Auto Loader files, Delta versions)."""
+        return f"/Volumes/{self.catalog}/{self.bronze_schema}/{self.checkpoints_volume}/{stream}"
