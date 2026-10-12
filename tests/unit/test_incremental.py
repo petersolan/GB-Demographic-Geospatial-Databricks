@@ -197,3 +197,14 @@ def test_new_registration_indices_must_stay_in_the_test_range(spark):
     with pytest.raises(ValueError, match="outside"):
         inc.generate_updates(people, postcodes, practices, "2026-07", first_new_index=999_999)
     assert inc.generate_updates(people, postcodes, practices, "2026-07", first_new_index=950_000).count() > 0
+
+
+def test_event_on_the_day_the_current_version_starts(spark, refs):
+    # a transfer effective the same day as the registration: a zero-length baseline, chain intact
+    table = new_history(spark, "hist_same_day")
+    batch = raw(spark, [("s1", A, inc.TRANSFER, "2020-01-01", None, "P2", "2026-08")])
+    assert apply(spark, table, batch, refs)["applied"] == 1
+    h = spark.table(table)
+    assert inc.check_history(h)["broken_chain_rows"] == 0
+    on_day = inc.registered_as_of(h, "2020-01-01").where(F.col("patient_id") == pid(spark, A)).first()
+    assert on_day.practice_code == "P2"

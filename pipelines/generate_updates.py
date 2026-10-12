@@ -4,7 +4,7 @@ Plays the part of the GP systems: a CSV of events (changes of address, practice 
 deregistrations, new registrations) with event ids and effective dates, including the problems
 real feeds have: duplicate deliveries, typo'd postcodes and late-arriving events. From the second
 month on, the previous month's file is delivered again, to prove reprocessing changes nothing.
-Deterministic: generating a month twice gives the same file.
+Deterministic, and a month already delivered is left untouched, so rerunning adds no new files.
 """
 
 from pathlib import Path
@@ -56,6 +56,10 @@ def main() -> None:
         .select(F.col("practice_code").alias("new_practice"))
         .distinct()
     )
+
+    if Path(target).exists():  # already delivered: leave the files as they are, so a rerun adds nothing
+        print(f"[generate_updates] {args.month} already delivered at {target}: nothing to do")
+        return
 
     y, m = (int(x) for x in args.month.split("-"))
     first_new = FIRST_NEW_INDEX + ((y * 12 + m) % MONTH_SLOTS) * INDICES_PER_MONTH

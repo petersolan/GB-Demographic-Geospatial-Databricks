@@ -427,7 +427,11 @@ def registered_as_of(history: DataFrame, day: str) -> DataFrame:
 
 def check_history(history: DataFrame) -> dict:
     """Invariants: one current row per patient and no gaps or overlaps between versions."""
-    w = Window.partitionBy("patient_id").orderBy("valid_from", "event_id")
+    # same-day versions (an event effective the day the current version starts) are zero-length:
+    # order ties by end date, open-ended last, so the chain reads 25 Aug-25 Aug then 25 Aug-now
+    w = Window.partitionBy("patient_id").orderBy(
+        "valid_from", F.coalesce("valid_to", F.lit("9999-12-31").cast("date")), "event_id"
+    )
     chain = history.withColumn("_next_from", F.lead("valid_from").over(w))
     per = history.groupBy("patient_id").agg(F.count_if("is_current").alias("n_current"))
     return {
