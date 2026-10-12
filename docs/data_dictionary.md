@@ -102,3 +102,39 @@ Calibration per practice: patients living in the study LSOAs, synthetic vs real 
 | `nhs_extract` | NHS England extract used (YYYY-MM). |
 | `nhspd_release` | NHS Postcode Directory release used to place postcodes (e.g. 2026-08). |
 | `_run_id` | Databricks job run that wrote the row; its input and output Delta versions are in silver.reconciliation (step gold_aggregate). |
+
+## `gold.lsoa_points`
+
+One map point per study LSOA: the centroid of its 2021 boundary in WGS84, for dashboard point maps. Public ONS geography, no patient data.
+
+| Column | Description |
+|---|---|
+| `lsoa21_code` | LSOA 2021 GSS code. |
+| `lat` | Latitude of the LSOA centroid (WGS84, 6 decimals). |
+| `lon` | Longitude of the LSOA centroid (WGS84, 6 decimals). |
+| `nhspd_release` | NHS Postcode Directory release used to place postcodes (e.g. 2026-08). |
+| `_run_id` | Databricks job run that wrote the row; its input and output Delta versions are in silver.reconciliation (step gold_aggregate). |
+
+## `gold.registered_monthly`
+
+Registered patients per district at each month end, read from the effective-dated patient history (silver.patient_history) that monthly update files are merged into. Disclosure-controlled: counts 1-9 are null (suppressed), others rounded to the nearest 5.
+
+| Column | Description |
+|---|---|
+| `month_end` | Last day of the month the count applies to. |
+| `lad_code` | Local authority district (GSS code) of the patient's address on that date. |
+| `registered` | Patients registered and active on that date. Disclosure-controlled: counts 1-9 are null (suppressed), others rounded to the nearest 5. |
+| `suppressed` | True if registered was suppressed. |
+| `_run_id` | Databricks job run that wrote the row (gbdemo_incremental). |
+
+## `gold.update_summary`
+
+Monthly registration update files: events received, applied to the history, and quarantined by reason. Counts distinct event ids, so re-delivered files and reruns are not double counted. Disclosure-controlled: counts 1-9 are null (suppressed), others rounded to the nearest 5.
+
+| Column | Description |
+|---|---|
+| `extract_month` | Month of the update file (YYYY-MM). |
+| `measure` | received, applied or quarantined. |
+| `item` | Event type (received, applied), 'all' (received total) or the quarantine reason. |
+| `events` | Number of distinct events. Disclosure-controlled: counts 1-9 are null (suppressed), others rounded to the nearest 5. |
+| `_run_id` | Databricks job run that wrote the row (gbdemo_incremental). |

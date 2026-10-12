@@ -442,3 +442,69 @@ def check_history(history: DataFrame) -> dict:
             F.col("_next_from").isNotNull() & ~F.col("valid_to").eqNullSafe(F.col("_next_from"))
         ).count(),
     }
+
+
+# ---------------------------------------------------------------- gold: protected monthly outputs
+
+
+def registered_by_month(history: DataFrame, month_ends: list[str]) -> DataFrame:
+    """Registered patients per district at each month end, from the history; protected."""
+    from gbdemo.disclosure import is_suppressed, protect
+
+    frames = [
+        registered_as_of(history, d).groupBy("lad_code").agg(F.count("*").alias("n")).withColumn(
+            "month_end", F.lit(d).cast("date")
+        )
+        for d in month_ends
+    ]
+    exact = frames[0]
+    for f in frames[1:]:
+        exact = exact.unionByName(f)
+    return exact.select(
+        "month_end",
+        "lad_code",
+        protect(F.col("n")).alias("registered"),
+        is_suppressed(F.col("n")).alias("suppressed"),
+    )
+
+
+def update_summary(updates: DataFrame, history: DataFrame, quarantine: DataFrame) -> DataFrame:
+    """Per monthly file: events received, applied, and quarantined by reason; protected.
+
+    Counts distinct event ids, so a re-delivered file or a rerun never counts an event twice.
+    """
+    from gbdemo.disclosure import protect
+
+    month = updates.select("event_id", "extract_month").distinct()
+    received = month.groupBy("extract_month").agg(F.count("*").alias("n")).select(
+        "extract_month", F.lit("received").alias("measure"), F.lit("all").alias("item"), "n"
+    )
+    by_type = (
+        updates.select("event_id", "extract_month", "event_type")
+        .distinct()
+        .groupBy("extract_month", "event_type")
+        .agg(F.count("*").alias("n"))
+        .select("extract_month", F.lit("received").alias("measure"), F.col("event_type").alias("item"), "n")
+    )
+    applied = (
+        history.where(F.col("event_id") != "baseline")
+        .select("event_id", "event_type")
+        .join(month, "event_id")
+        .groupBy("extract_month", "event_type")
+        .agg(F.count("*").alias("n"))
+        .select("extract_month", F.lit("applied").alias("measure"), F.col("event_type").alias("item"), "n")
+    )
+    reasons = (
+        quarantine.select("event_id", F.explode("dq_flags").alias("reason"))
+        .distinct()
+        .join(month, "event_id")
+        .groupBy("extract_month", "reason")
+        .agg(F.count("*").alias("n"))
+        .select("extract_month", F.lit("quarantined").alias("measure"), F.col("reason").alias("item"), "n")
+    )
+    return (
+        received.unionByName(by_type)
+        .unionByName(applied)
+        .unionByName(reasons)
+        .select("extract_month", "measure", "item", protect(F.col("n")).alias("events"))
+    )

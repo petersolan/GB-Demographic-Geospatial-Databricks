@@ -1,12 +1,14 @@
 """Gold documentation: complete, applied to the catalog, and the markdown copy is up to date."""
 
+import datetime as dt
 from pathlib import Path
 
 from pyspark.sql import functions as F
 
-from gbdemo import calibration, catalog_docs, gold
+from gbdemo import calibration, catalog_docs, gold, incremental
 
 ADDED_ON_SAVE = ["nhspd_release", "_run_id"]  # pipelines/gold_aggregate.py adds these
+ADDED_BY_TABLE = {"registered_monthly": ["_run_id"], "update_summary": ["_run_id"]}  # gold_updates.py
 
 
 def gold_outputs(spark):
@@ -31,6 +33,15 @@ def gold_outputs(spark):
     new_pcs = spark.createDataFrame([("A", 0)], "lsoa21_code string, postcodes_since_census long")
     cal_practices = practices.withColumn("prescribing_setting", F.lit("RO76"))
     extract = F.lit("2026-07")  # pipelines/gold_aggregate.py adds the extract before saving
+    history = incremental.seed_history(spark.createDataFrame(
+        [("p1", "EX1 1HS", "A", "I", "E07000041", "P1", dt.date(2020, 1, 1))],
+        "patient_id string, postcode string, lsoa21_code string, icb_gss string, lad_code string, "
+        "practice_code string, registration_date date"))
+    updates = spark.createDataFrame([("e1", "2026-07", incremental.MOVE)],
+                                    "event_id string, extract_month string, event_type string")
+    update_quarantine = spark.createDataFrame(
+        [("e1", ["late_event"])], "event_id string, dq_flags array<string>"
+    )
     return {
         "lsoa_registered_vs_resident": gold.lsoa_registered_vs_resident(
             gold.residents_by_lsoa(census, pcs, ["E07000041"]), gold.registered_by_lsoa(regs),
@@ -47,6 +58,12 @@ def gold_outputs(spark):
         "practice_calibration": calibration.practice_calibration(
             regs, nhs, pcs.select("lsoa21_code"), cal_practices
         ).withColumn("nhs_extract", extract),
+        "lsoa_points": gold.lsoa_points(
+            spark.createDataFrame([("A", 50.7, -3.5)], "lsoa21_code string, lat double, lon double"),
+            pcs.select("lsoa21_code"),
+        ),
+        "registered_monthly": incremental.registered_by_month(history, ["2026-07-31"]),
+        "update_summary": incremental.update_summary(updates, history, update_quarantine),
     }
 
 
@@ -55,7 +72,7 @@ def test_every_gold_column_is_documented(spark):
     assert set(outputs) == set(catalog_docs.GOLD)
     for table, df in outputs.items():
         documented = list(catalog_docs.GOLD[table][1])
-        assert documented == df.columns + ADDED_ON_SAVE, table
+        assert documented == df.columns + ADDED_BY_TABLE.get(table, ADDED_ON_SAVE), table
 
 
 def test_comments_written_to_catalog(spark):

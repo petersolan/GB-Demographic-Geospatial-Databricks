@@ -103,3 +103,14 @@ def icb_summary(registrations: DataFrame, residents_icb: DataFrame, icb_names: D
         protect(F.col("registered")).alias("registered"),
         protect_ratio(F.col("registered"), F.col("residents")).alias("registered_per_resident"),
     )
+
+
+def lsoa_points(points: DataFrame, study_lsoas: DataFrame) -> DataFrame:
+    """One map point per study LSOA (centroid, WGS84) for dashboard point maps.
+
+    points: lsoa21_code, lat, lon, computed on Databricks with ST_Centroid and ST_Transform.
+    Public ONS geography, no patient data.
+    """
+    return points.join(study_lsoas, "lsoa21_code").select(
+        "lsoa21_code", F.round("lat", 6).alias("lat"), F.round("lon", 6).alias("lon")
+    )

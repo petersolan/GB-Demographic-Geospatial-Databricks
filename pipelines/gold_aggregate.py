@@ -101,6 +101,13 @@ def main() -> None:
         ).withColumn("nhs_extract", F.lit(extract)),
         "lsoa_calibration",
     )
+    # map points for the dashboard: LSOA centroids, computed in BNG and transformed for web maps
+    centroids = spark.sql(f"""
+        SELECT code AS lsoa21_code,
+               ST_Y(ST_Transform(ST_Centroid(geom), 4326)) AS lat,
+               ST_X(ST_Transform(ST_Centroid(geom), 4326)) AS lon
+        FROM {layout.silver("lsoa21_geo")}""")
+    save(gold.lsoa_points(centroids, study), "lsoa_points")
     practice_cal = save(
         calibration.practice_calibration(
             regs, nhs_patients, study, practices.where(F.col("ods_snapshot") == snapshot)

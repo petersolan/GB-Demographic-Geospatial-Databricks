@@ -111,6 +111,40 @@ GOLD: dict[str, tuple[str, dict[str, str]]] = {
             **LINEAGE,
         },
     ),
+    "lsoa_points": (
+        "One map point per study LSOA: the centroid of its 2021 boundary in WGS84, for dashboard point "
+        "maps. Public ONS geography, no patient data.",
+        {
+            "lsoa21_code": "LSOA 2021 GSS code.",
+            "lat": "Latitude of the LSOA centroid (WGS84, 6 decimals).",
+            "lon": "Longitude of the LSOA centroid (WGS84, 6 decimals).",
+            **LINEAGE,
+        },
+    ),
+    "registered_monthly": (
+        "Registered patients per district at each month end, read from the effective-dated patient "
+        "history (silver.patient_history) that monthly update files are merged into. "
+        f"{PROTECTED}",
+        {
+            "month_end": "Last day of the month the count applies to.",
+            "lad_code": "Local authority district (GSS code) of the patient's address on that date.",
+            "registered": f"Patients registered and active on that date. {PROTECTED}",
+            "suppressed": "True if registered was suppressed.",
+            "_run_id": "Databricks job run that wrote the row (gbdemo_incremental).",
+        },
+    ),
+    "update_summary": (
+        "Monthly registration update files: events received, applied to the history, and quarantined "
+        "by reason. Counts distinct event ids, so re-delivered files and reruns are not double counted. "
+        f"{PROTECTED}",
+        {
+            "extract_month": "Month of the update file (YYYY-MM).",
+            "measure": "received, applied or quarantined.",
+            "item": "Event type (received, applied), 'all' (received total) or the quarantine reason.",
+            "events": f"Number of distinct events. {PROTECTED}",
+            "_run_id": "Databricks job run that wrote the row (gbdemo_incremental).",
+        },
+    ),
 }
 
 

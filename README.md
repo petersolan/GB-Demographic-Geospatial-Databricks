@@ -21,15 +21,16 @@ same scale. Every number is disclosure-controlled.*
 
 | Capability | How |
 |---|---|
-| Databricks, PySpark, SQL, Delta Lake | 7-task medallion pipeline deployed as a Databricks Asset Bundle on serverless compute; Unity Catalog schemas per layer |
+| Databricks, PySpark, SQL, Delta Lake | 7-task medallion pipeline, plus a monthly incremental job, deployed as a Databricks Asset Bundle on serverless compute; Unity Catalog schemas per layer |
 | Postcode standardisation + enrichment | Deterministic cleaning, format checks, joins to the NHS Postcode Directory (incl. terminated postcodes) and ODS practices; quarantine with reason codes |
 | Spatial joins, point-in-polygon, edge cases | Native Databricks spatial SQL (`GEOMETRY`, `ST_Covers`) in British National Grid; bounding-box filter then refine; on-boundary, no-match and multi-match rules |
 | CRS + geometry validation | BNG (EPSG:27700) throughout, WGS84 only for the web; `ST_IsValid`, Shapely repair UDF (no `ST_MakeValid` in Databricks); WKT / WKB / GeoJSON / GeoParquet |
 | Versioned lookups and boundaries | ICB code and boundary editions as SCD2 (`valid_from` / `valid_to`); each NHSPD release joined to the edition in force; gold reads every input pinned to a Delta version and records input and output versions, so any run can be rebuilt with time travel (tested) |
+| Incremental ingestion, MERGE, effective dates | Monthly update files ingested with Auto Loader; each micro-batch deduplicated, validated and applied with one `MERGE` to an effective-dated patient history (SCD2); re-delivered files and reruns change nothing; late events quarantined; point-in-time counts per month end ([details](#incremental-updates)) |
 | Data quality + reconciliation | Flags per row, quarantine tables, rows-in = rows-out assertions after every join, metrics table per run, results measured against a ground truth |
 | Spark optimisation | Spatial join benchmark from 10k to 2.4M points with query-plan capture and a query-profile breakdown; liquid clustering on the large silver tables, measured at 109M rows; broadcast joins for lookups; idempotent per-version writes; repair runs |
 | Access, pseudonymisation, disclosure control | Unity Catalog grants in the bundle (analysts read gold only); column mask on raw NHS numbers; HMAC-SHA256 `patient_id` with the key in a secret scope; year of birth + age band only (data minimisation); counts 1-9 suppressed and others rounded to 5 |
-| Git, CI/CD, automated tests | GitHub Actions: ruff + 81 unit tests on open-source PySpark, then `bundle validate` on pull requests and `bundle deploy -t prod` from main; integration tests (spatial edge cases, reproducibility, catalog docs) run pytest inside a Databricks job |
+| Git, CI/CD, automated tests | GitHub Actions: ruff + 87 unit tests on open-source PySpark, then `bundle validate` on pull requests and `bundle deploy -t prod` from main; integration tests (spatial edge cases, reproducibility, catalog docs) run pytest inside a Databricks job |
 | Communication with analysts | Gold tables and columns described once in code, written to Unity Catalog comments and to a [data dictionary](docs/data_dictionary.md); a test keeps them in sync; an [AI/BI dashboard](#dashboard) on gold, deployed as code; findings below in plain language |
 | Census geographies | Outputs by LSOA, MSOA, ICB and GP practice |
 | NHS demographic data | The synthetic list calibrated against NHS England's *Patients Registered at a GP Practice* (patients by practice and LSOA 2021); the comparison found and fixed a generator bug |
@@ -131,6 +132,60 @@ practices, weighted by distance):
   37,785 real) and overestimates special-purpose ones (Inclusion Health Devon, a service for people who
   are homeless: 12,780 synthetic, 615 real). Weighting the choice by real list size would be the next
   step.
+
+## Incremental updates
+
+The main pipeline rebuilds the registration list from scratch. Real GP feeds don't arrive like that:
+they send **changes**, every month. A second job, `gbdemo_incremental`, handles that pattern:
+
+```
+monthly update file (CSV)  ->  bronze: Auto Loader  ->  silver: stream + MERGE  ->  gold: monthly counts
+moves, transfers,              new files only,          dedupe, validate,          registered per district
+deregistrations, new           checkpointed             pseudonymise, apply        at each month end;
+registrations                                           to patient_history (SCD2)  events by type / reason
+```
+
+- **Bronze (`pipelines/bronze_updates.py`):** Auto Loader (`cloudFiles`, `trigger(availableNow=True)`) lists the
+  landing folder and ingests only files its checkpoint hasn't seen; the schema is fixed, so a changed file fails
+  loudly. No column mask on this table: Delta streaming reads don't support masked tables, so bronze is protected
+  by schema grants (pipeline only) instead.
+- **Silver (`pipelines/silver_updates.py`, `gbdemo/incremental.py`):** a stream over the bronze table, so each run
+  sees only new rows. Each micro-batch (`foreachBatch`):
+  1. removes duplicate event ids, validates (NHS number, event type, date, postcode, practice) and pseudonymises;
+  2. skips events already in the history, which makes re-delivered files and reruns harmless;
+  3. quarantines what can't be applied safely, with a reason: unknown patient, already registered, or **late**
+     (effective before the patient's current version, which needs a deliberate backfill);
+  4. applies the remaining events in effective-date order, several per patient if needed, with **one `MERGE`**
+     that closes current rows and inserts new versions atomically;
+  5. reconciles: events in = duplicates + quarantined + already applied + no-ops + applied, or the run stops.
+
+  After the stream, invariants are asserted (exactly one current row per patient, no gaps or overlaps between
+  versions) and registered patients are counted **as of each month end** from the history. Change data feed is on,
+  so downstream tables could read only the rows each `MERGE` changed.
+- **Gold (`pipelines/gold_updates.py`):** `gold.registered_monthly` and `gold.update_summary`, protected like
+  every gold table and shown on the dashboard's "Monthly updates" page.
+
+Three months of synthetic files, run month by month on Databricks. From August on, the previous month's file is
+**delivered again** under a new name, as real feeds sometimes do:
+
+| Run | Events in | Applied | Already applied | Quarantined | Registered at month end |
+|---|---|---|---|---|---|
+| July | 9,914 | 9,610 | 0 | 240 | 516,266 |
+| August (+ July again) | 19,636 | 9,207 | 9,610 | 698 | 519,026 |
+| September (+ August again) | 19,363 | 9,138 | 9,207 | 875 | 521,812 |
+| September, rerun | 0 rows ingested: Auto Loader skipped every file | | | | unchanged |
+
+Reprocessing the whole July file left the 31 July count exactly as it was, and the rerun ingested nothing.
+Building it surfaced three problems, each now covered by a test:
+
+- **Synthetic NHS numbers past the end of the test range.** New registrations were given indices above
+  999,999, which wrapped and repeated each number ten times. The duplicate count was 30 times what the generator
+  injects, which gave it away. The generator now fails loudly if a range would leave the test range.
+- **An event on the day a version starts.** A transfer dated the same day as a registration makes a zero-length
+  version. The data was right; the chain check ordered same-day versions wrongly and stopped the run. Ties are
+  now ordered by end date.
+- **Regenerating a month looked like a re-delivery.** Silver stayed correct (nothing applied twice), but the
+  generator now leaves a month already delivered untouched, so a rerun really does add nothing.
 
 ## Dashboard
 
@@ -275,17 +330,18 @@ src/gbdemo/        pipeline logic as plain, unit-testable functions
   registrations.py   validation, quarantine, dedup, pseudonymisation, minimisation
   synthetic.py       reproducible synthetic registrations + ground truth
   calibration.py     synthetic list vs NHS England published registrations
+  incremental.py     monthly updates: dedupe, validate, MERGE into an effective-dated history
   lineage.py         inputs pinned to Delta versions; versions recorded for time travel
   clustering.py      liquid clustering (CLUSTER BY + OPTIMIZE)
   catalog_docs.py    gold table and column descriptions -> catalog comments + data dictionary
   gold.py, disclosure.py, reconcile.py, versioning.py, postcodes.py, nhs_number.py
 pipelines/         thin job entry points (one per task)
-resources/         bundle resources: schemas + grants, volumes, pipeline, integration-test and benchmark jobs, dashboard
+resources/         bundle resources: schemas + grants, volumes, pipeline, incremental, integration-test and benchmark jobs, dashboard
 dashboards/        AI/BI dashboard definition (.lvdash.json)
 databricks.yml     bundle definition: wheel build, variables, dev / prod targets
 scripts/           download, prepare, upload, secret setup, fetch site data, data dictionary,
                    layout measurement, run tests
-tests/unit/        81 unit tests (Docker locally, GitHub Actions in CI)
+tests/unit/        87 unit tests (Docker locally, GitHub Actions in CI)
 tests/integration/ spatial, reproducibility and catalog-docs tests that run pytest inside a Databricks job
 docs/              data dictionary (generated), images
 site/              static results page (MapLibre) + protected data files, deployed to GitHub Pages
@@ -309,6 +365,7 @@ python scripts/create_pseudonym_key.py
 databricks bundle deploy
 databricks bundle run gbdemo_pipeline              # ~17 min on Free Edition
 databricks bundle run gbdemo_integration_tests     # spatial edge cases, reproducibility, catalog docs
+databricks bundle run gbdemo_incremental --params month=2026-07   # then 2026-08, 2026-09: monthly updates
 
 # 4. results site
 python scripts/fetch_site_data.py --volume /Volumes/workspace/dev_<user>_gbdemo_gold/exports

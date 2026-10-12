@@ -1,5 +1,6 @@
 # Incremental registration updates, run once per monthly file:
 #   generate (as if received from GP systems) -> bronze (Auto Loader) -> silver (stream + MERGE, SCD2)
+#   -> gold (protected monthly counts)
 # Run month by month, e.g.  databricks bundle run gbdemo_incremental --params month=2026-08
 # Rerunning a month is safe: Auto Loader skips files it has seen, and applied events are skipped.
 resources:
@@ -46,6 +47,14 @@ resources:
           environment_key: default
           spark_python_task:
             python_file: ../pipelines/silver_updates.py
+            parameters: *args
+
+        - task_key: gold_updates
+          max_retries: 0
+          depends_on: [{ task_key: silver_updates }]
+          environment_key: default
+          spark_python_task:
+            python_file: ../pipelines/gold_updates.py
             parameters: *args
 
       environments:
