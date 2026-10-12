@@ -41,8 +41,14 @@
       "name": "monthly",
       "displayName": "Registered by month (gold)",
       "queryLines": [
-        "SELECT month_end, CASE lad_code WHEN 'E07000040' THEN 'East Devon' WHEN 'E07000041' THEN 'Exeter' WHEN 'E07000042' THEN 'Mid Devon' WHEN 'E07000045' THEN 'Teignbridge' ELSE lad_code END AS district, registered\n",
-        "FROM registered_monthly\n"
+        "WITH m AS (\n",
+        "  SELECT month_end, CASE lad_code WHEN 'E07000040' THEN 'East Devon' WHEN 'E07000041' THEN 'Exeter' WHEN 'E07000042' THEN 'Mid Devon' WHEN 'E07000045' THEN 'Teignbridge' ELSE lad_code END AS district, registered\n",
+        "  FROM registered_monthly\n",
+        "  WHERE lad_code IN ('E07000040', 'E07000041', 'E07000042', 'E07000045')\n",
+        ")\n",
+        "SELECT date_format(month_end, 'yyyy-MM') AS month, district, registered,\n",
+        "       registered - lag(registered) OVER (PARTITION BY district ORDER BY month_end) AS change\n",
+        "FROM m\n"
       ]
     },
     {
@@ -50,10 +56,11 @@
       "displayName": "Monthly update files (gold)",
       "queryLines": [
         "SELECT extract_month, measure,\n",
-        "       CASE measure WHEN 'quarantined' THEN item\n",
+        "       CASE measure WHEN 'quarantined' THEN replace(item, '_', ' ')\n",
         "            ELSE initcap(lower(replace(item, '_', ' '))) END AS item,\n",
         "       events\n",
-        "FROM update_summary\n"
+        "FROM update_summary\n",
+        "ORDER BY extract_month, CASE measure WHEN 'received' THEN 1 WHEN 'applied' THEN 2 ELSE 3 END, item\n"
       ]
     },
     {
@@ -819,7 +826,7 @@
         },
         {
           "widget": {
-            "name": "line_registered",
+            "name": "bar_change",
             "queries": [
               {
                 "name": "main_query",
@@ -828,12 +835,12 @@
                   "disaggregated": false,
                   "fields": [
                     {
-                      "name": "month_end",
-                      "expression": "`month_end`"
+                      "name": "month",
+                      "expression": "`month`"
                     },
                     {
-                      "name": "registered",
-                      "expression": "SUM(`registered`)"
+                      "name": "change",
+                      "expression": "SUM(`change`)"
                     },
                     {
                       "name": "district",
@@ -845,21 +852,21 @@
             ],
             "spec": {
               "version": 3,
-              "widgetType": "line",
+              "widgetType": "bar",
               "encodings": {
                 "x": {
-                  "fieldName": "month_end",
+                  "fieldName": "month",
                   "scale": {
-                    "type": "temporal"
+                    "type": "categorical"
                   },
                   "displayName": "Month end"
                 },
                 "y": {
-                  "fieldName": "registered",
+                  "fieldName": "change",
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Registered patients"
+                  "displayName": "Change in registered patients"
                 },
                 "color": {
                   "fieldName": "district",
@@ -871,7 +878,12 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Registered patients at each month end (from the history)"
+                "title": "Change in registered patients since the previous month end",
+                "showDescription": true,
+                "description": "From the effective-dated history: new registrations minus deregistrations, by where patients live at each month end. July is the first month, so it has no change."
+              },
+              "mark": {
+                "layout": "group"
               }
             }
           },
@@ -1131,10 +1143,6 @@
                     {
                       "name": "nhs_per_resident",
                       "expression": "`nhs_per_resident`"
-                    },
-                    {
-                      "name": "lsoa21_name",
-                      "expression": "`lsoa21_name`"
                     }
                   ]
                 }
@@ -1142,35 +1150,36 @@
             ],
             "spec": {
               "version": 2,
-              "widgetType": "point-map",
+              "widgetType": "symbol-map",
               "encodings": {
                 "coordinates": {
                   "latitude": {
-                    "fieldName": "lat",
-                    "displayName": "Latitude"
+                    "fieldName": "lat"
                   },
                   "longitude": {
-                    "fieldName": "lon",
-                    "displayName": "Longitude"
+                    "fieldName": "lon"
                   }
                 },
                 "color": {
                   "fieldName": "nhs_per_resident",
+                  "displayName": "Real registered per resident",
                   "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Registered per resident"
-                },
-                "extra": [
-                  {
-                    "fieldName": "lsoa21_name",
-                    "displayName": "LSOA"
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "viridis"
+                    }
                   }
-                ]
+                }
+              },
+              "mark": {
+                "opacity": 0.8
               },
               "frame": {
                 "showTitle": true,
-                "title": "LSOAs, real registered per resident"
+                "title": "LSOAs: real registered patients per Census resident",
+                "showDescription": true,
+                "description": "Brightest points: new housing since the Census. Darkest: institutions whose residents are not on NHS GP lists."
               }
             }
           },

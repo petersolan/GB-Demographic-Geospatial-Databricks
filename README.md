@@ -194,9 +194,15 @@ Building it surfaced three problems, each now covered by a test:
 An AI/BI dashboard for analysts (`dashboards/registered_vs_resident.lvdash.json`), deployed by the
 bundle like the jobs (`resources/dashboard.yml`), so CI/CD ships it to each target. It reads only gold
 tables: `dataset_catalog` / `dataset_schema` point the same queries at the target's gold schema, so the
-SQL names no schema. Page one compares synthetic and real registrations per resident (counters, list
-inflation by district, new housing against the real ratio, and an LSOA table, with a district filter);
-page two compares practice list sizes. Edit it in the UI, then export it back to the file with
+SQL names no schema. Four pages: **Registered vs resident** compares synthetic and real registrations per resident (counters,
+list inflation by district, new housing against the real ratio, and an LSOA table, with a district filter);
+**Practices** compares practice list sizes; **Monthly updates** shows the [incremental](#incremental-updates)
+job (change in registered patients per month, events applied by type, quarantined events by reason); **Map**
+plots every LSOA's centroid coloured by real registered per resident (`gold.lsoa_points`).
+
+![Dashboard map page: LSOAs coloured by real registered per resident](docs/images/dashboard_map.png)
+
+ Edit it in the UI, then export it back to the file with
 `databricks bundle generate dashboard --resource registered_vs_resident --force`. On Free Edition it
 is visible only inside the workspace; the static [results site](https://petersolan.github.io/GB-Demographic-Geospatial-Databricks/)
 is the public view. In `prod` it deploys with the jobs but shows data only once the pipeline has run there.
