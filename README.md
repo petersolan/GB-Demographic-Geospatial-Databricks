@@ -207,6 +207,31 @@ plots every LSOA's centroid coloured by real registered per resident (`gold.lsoa
 is visible only inside the workspace; the static [results site](https://petersolan.github.io/GB-Demographic-Geospatial-Databricks/)
 is the public view. In `prod` it deploys with the jobs but shows data only once the pipeline has run there.
 
+## Exploring in QGIS
+
+`qgis/` builds a QGIS project with the pipeline's **inputs, checks and outputs** in one place, for
+exploring the data behind the numbers:
+
+```bash
+python qgis/export_layers.py      # Databricks tables + local boundaries -> data/qgis/gbdemo.gpkg (BNG)
+"C:\Program Files\QGIS 3.44.13\bin\python-qgis-ltr.bat" qgis\build_project.py --render
+```
+
+Then open `data/qgis/gbdemo.qgz`. Layer groups:
+
+- **Outputs (gold):** real and synthetic registered per resident by LSOA (same colour scale), postcodes
+  introduced since Census day, districts labelled with their monthly change, GP practices coloured by
+  synthetic minus real patients, MSOA and ICB summaries.
+- **Checks (silver):** the 23 postcodes in no LSOA (tidal water) and the 7 August 2025 NHSPD assignments that
+  disagreed with the spatial join, each labelled *postcode, old LSOA -> spatial LSOA* (ONS corrected all 7).
+- **Inputs:** postcodes (live / terminated) and Census residents per postcode, ODS organisations split into
+  GP practices and the other settings (minor injury units, a prison, pharmacies) behind the generator bug,
+  LSOA / MSOA boundaries and both ICB editions.
+
+Only gold outputs and public reference data are exported; no record-level patient data, synthetic or not.
+
+![QGIS project: real registered per resident by LSOA, district changes and the 2025 disagreements](docs/images/qgis_project.jpg)
+
 ## Performance
 
 Point-in-polygon of located postcodes against all 35,672 LSOAs in England and Wales, on Databricks Free
@@ -344,6 +369,7 @@ src/gbdemo/        pipeline logic as plain, unit-testable functions
 pipelines/         thin job entry points (one per task)
 resources/         bundle resources: schemas + grants, volumes, pipeline, incremental, integration-test and benchmark jobs, dashboard
 dashboards/        AI/BI dashboard definition (.lvdash.json)
+qgis/              QGIS project builder: export layers to a GeoPackage, then a styled project
 databricks.yml     bundle definition: wheel build, variables, dev / prod targets
 scripts/           download, prepare, upload, secret setup, fetch site data, data dictionary,
                    layout measurement, run tests
