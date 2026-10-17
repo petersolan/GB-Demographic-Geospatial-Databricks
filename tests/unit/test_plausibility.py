@@ -43,7 +43,7 @@ def test_plausibility_flags(spark):
     )
     census = spark.createDataFrame([("EX1 1HS", 40), ("NE1 4ST", 12)], "postcode string, residents int")
 
-    clean, _, _ = registrations.clean(regs, postcodes, practices, "k", "2026-10-01", census=census)
+    clean, _ = registrations.clean(regs, postcodes, practices, "k", "2026-10-01", census=census)
     got = {r.postcode: sorted(set(r.dq_flags) - {"postcode_reformatted"}) for r in clean.collect()}
 
     assert got["EX1 1HS"] == []

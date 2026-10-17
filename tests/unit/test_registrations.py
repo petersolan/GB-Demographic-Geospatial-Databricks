@@ -51,7 +51,8 @@ def result(spark):
         PC_COLS,
     )
     practices = spark.createDataFrame([("L1",), ("L2",)], "practice_code string")
-    clean, quarantine, counts = registrations.clean(regs, postcodes, practices, "test-key", "2026-10-01")
+    clean, quarantine = registrations.clean(regs, postcodes, practices, "test-key", "2026-10-01")
+    counts = registrations.counts(regs, clean, quarantine)
     return clean.collect(), quarantine.collect(), counts, clean.columns
 
 

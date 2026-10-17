@@ -1,4 +1,5 @@
-# The pipeline as one job: five tasks, run in order (bronze -> silver -> gold -> publish).
+# The pipeline as one job: seven tasks (bronze -> silver -> gold -> publish); silver_spatial and
+# the registrations branch run in parallel.
 # Every task gets the deployed schema names, so code never hard-codes dev/prod names.
 resources:
   jobs:

@@ -66,11 +66,13 @@ def clean(
     key: str,
     reference_date: str,
     census: DataFrame | None = None,
-) -> tuple[DataFrame, DataFrame, dict]:
-    """Return (clean registrations, quarantine, counts) from raw registrations.
+) -> tuple[DataFrame, DataFrame]:
+    """Return (clean registrations, quarantine) from raw registrations, both lazy.
 
     postcodes: one NHSPD release (silver.postcode rows); practices: silver.gp_practice rows;
     census (optional): postcode, residents. Plausibility checks run only for the inputs supplied.
+    Count the results with counts() after writing them: counting these DataFrames directly
+    recomputes every join and the HMAC for each count (serverless has no .cache()).
     """
     optional = [c for c in ("user_type", "northing", "date_introduced") if c in postcodes.columns]
     pc = postcodes.select(
@@ -155,12 +157,19 @@ def clean(
         (F.col("_count") - 1).alias("duplicates_removed"),
         "dq_flags",
     )
-    # each count comes from its own data path; deriving one as "the rest" would make the
-    # balance check (rows_in = clean + quarantined + duplicates_removed) true by construction
-    counts = {
+    return clean_df, quarantine
+
+
+def counts(registrations: DataFrame, clean_df: DataFrame, quarantine: DataFrame) -> dict:
+    """Rows in, clean, quarantined and duplicates removed, for the balance check.
+
+    Each count comes from its own data path; deriving one as "the rest" would make the
+    balance check (rows_in = clean + quarantined + duplicates_removed) true by construction.
+    """
+    clean_rows, duplicates = clean_df.agg(F.count(F.lit(1)), F.sum("duplicates_removed")).first()
+    return {
         "rows_in": registrations.count(),
         "quarantined": quarantine.count(),
-        "clean": clean_df.count(),
-        "duplicates_removed": clean_df.agg(F.sum("duplicates_removed")).first()[0] or 0,
+        "clean": clean_rows,
+        "duplicates_removed": duplicates or 0,
     }
-    return clean_df, quarantine, counts
